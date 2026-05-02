@@ -1,4 +1,6 @@
 import shap
+from pathlib import Path
+import joblib
 
 
 class RiskExplainer:
@@ -20,6 +22,21 @@ class RiskExplainer:
         self.wisconsin_explainer = None
         self.ucth_explainer      = None
         self.coimbra_explainer   = None
+
+    SAVED_MODELS_DIRECTORY = Path(__file__).parent.parent / "saved_models"
+
+    def save(self):
+        """
+        Saves the fitted SHAP explainer instance to disk.
+        """
+        joblib.dump(self, self.SAVED_MODELS_DIRECTORY / "shap_explainer.pkl")
+
+    @classmethod
+    def load(cls):
+        """
+        Loads a saved SHAP explainer instance from disk.
+        """
+        return joblib.load(cls.SAVED_MODELS_DIRECTORY / "shap_explainer.pkl")
 
     def fit(
         self,

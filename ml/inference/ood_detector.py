@@ -1,4 +1,6 @@
 import pandas as pd
+from pathlib import Path
+import joblib
 
 
 class OutOfDistributionDetector:
@@ -24,6 +26,21 @@ class OutOfDistributionDetector:
         self.training_means               = {}
         self.training_standard_deviations = {}
         self.feature_names                = []
+
+    SAVED_MODELS_DIRECTORY = Path(__file__).parent.parent / "saved_models"
+
+    def save(self):
+        """
+        Saves the fitted OOD detector instance to disk.
+        """
+        joblib.dump(self, self.SAVED_MODELS_DIRECTORY / "ood_detector.pkl")
+
+    @classmethod
+    def load(cls):
+        """
+        Loads a saved OOD detector instance from disk.
+        """
+        return joblib.load(cls.SAVED_MODELS_DIRECTORY / "ood_detector.pkl")
 
     def fit(self, features: pd.DataFrame):
         """
