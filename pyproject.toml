@@ -1,5 +1,5 @@
 [project]
-name = "breast-cancer-dss"
+name = "medsight-api"
 version = "0.1.0"
 description = "Intelligent Decision Support System for Breast Cancer Risk Assessment"
 readme = "README.md"
