@@ -1,7 +1,7 @@
 import logging
 
 import pandas as pd
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.repositories.assessment_repository import create_clinician_assessment
@@ -159,6 +159,15 @@ async def clinician_assess(
             "Failed to persist clinician assessment for patient_id=%s clinician_user_id=%s",
             body.patient_id,
             current_user.id,
+        )
+        # Raise a server error here because returning the ML result after a failed write
+        # would hide clinical audit-trail loss from the clinician.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Assessment could not be saved. Please try again or contact "
+                "support if the problem persists."
+            ),
         )
 
     return response_payload
