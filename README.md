@@ -40,6 +40,9 @@ http://127.0.0.1:8000
 ```text
 medsight-api/
 ├── api/                  # FastAPI app
+│   ├── routers/              # Nested role-based routers
+│   ├── schemas/              # Pydantic request schemas
+│   └── db/                   # Database access layer
 ├── ml/                   # ML pipeline code
 ├── data/raw/             # Raw CSV datasets
 ├── docs/                 # Project docs

@@ -43,13 +43,19 @@ medsight-api/                               # Backend and machine learning repos
 │   ├── lib/                                # Shared API utilities
 │   │   ├── __init__.py                     # Marks api.lib as a Python package
 │   │   └── auth.py                         # JWT verification and role enforcement helpers
-│   ├── routers/                            # API route handlers
+│   ├── routers/                            # API route modules
 │   │   ├── __init__.py                     # Marks api.routers as a Python package
-│   │   └── predict.py                      # Assessment and history endpoints
-│   ├── schemas/                            # Pydantic request schema package
-│   │   ├── __init__.py                     # Marks api.schemas as a Python package
-│   │   ├── assessment.py                   # Assessment request models for member and clinician flows
-│   │   └── assessment_history.py           # Response models for assessment history and details
+│   │   ├── member/                         # Member domain endpoints
+│   │   │   ├── __init__.py                 # Aggregates member routers
+│   │   │   └── assess.py                   # Member assessment endpoints
+│   │   └── clinician/                      # Clinician domain endpoints
+│   │       ├── __init__.py                 # Aggregates clinician routers
+│   │       ├── assess.py                   # Clinician assessment endpoints
+│   │       └── history.py                  # Clinician assessment history endpoints
+│   └── schemas/                            # Pydantic request schema package
+│       ├── __init__.py                     # Marks api.schemas as a Python package
+│       ├── assessment.py                   # Assessment request models for member and clinician flows
+│       └── assessment_history.py           # Response models for assessment history and details
 │   └── db/                                 # Database access layer
 │       ├── __init__.py                     # Marks api.db as a Python package
 │       ├── base.py                         # SQLAlchemy DeclarativeBase
@@ -145,17 +151,18 @@ The backend expects the Supabase JWT payload structure to provide:
 - `email` as the user email address
 - `user_metadata.role` as the application role
 
-### 4.3 Routers (`api/routers/predict.py`)
+### 4.3 Routers (Role-Based Module Pattern)
 
-`api/routers/predict.py` contains the assessment and history endpoints.
+The API uses a nested module pattern to separate concerns by user role and feature. Each role has its own package in `api/routers/` that aggregates feature-specific routers.
 
-- `POST /api/member/assess` requires `role == "member"`, accepts clinical data only, and returns a simplified member-facing result.
-- `POST /api/clinician/assess` requires `role == "clinician"`, accepts clinical data plus optional biopsy data and optional blood panel data, and returns a full clinician report. This endpoint persists the result to the database.
-- `GET /api/clinician/assessments` requires `role == "clinician"`, returns a paginated list of previous assessments.
-- `GET /api/clinician/assessments/{id}` requires `role == "clinician"`, returns a specific assessment record.
-- `DELETE /api/clinician/assessments/{id}` requires `role == "clinician"`, performs a soft-delete of the assessment record.
+#### Member Domain (`api/routers/member/`)
+- `assess.py`: Handles the simplified member assessment flow.
 
-Both endpoints are intentionally thin. They construct DataFrames from validated request models, call the already-loaded machine learning components, and shape the response body. Business rules and data access logic belong in reusable machine learning and repository components, not embedded directly inside endpoint bodies.
+#### Clinician Domain (`api/routers/clinician/`)
+- `assess.py`: Handles detailed clinician assessments and (future) batch uploads. This endpoint persists the result to the database.
+- `history.py`: Handles paginated history lists, detailed record retrieval, and soft-deletion of assessments.
+
+This structure ensures that as the API expands, files remain small and dependencies remain isolated. For example, the history router does not need to load machine learning artefacts, while the assessment router does not need to manage pagination logic.
 
 ### 4.4 Schemas (`api/schemas/assessment.py`)
 

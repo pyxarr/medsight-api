@@ -2,7 +2,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI
-from api.routers import predict
+from api.routers.member import member_router
+from api.routers.clinician import clinician_router
 # Register ORM model metadata before startup so SQLAlchemy is aware of all tables.
 import api.models.user
 import api.models.assessment
@@ -61,7 +62,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-app.include_router(predict.router, prefix="/api")
+app.include_router(member_router, prefix="/api/member", tags=["Member"])
+app.include_router(clinician_router, prefix="/api/clinician", tags=["Clinician"])
 
 
 @app.get("/")

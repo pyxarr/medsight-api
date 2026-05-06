@@ -18,6 +18,7 @@ Already implemented:
 - out-of-distribution warnings for UCTH clinical features
 - database persistence for clinician assessments
 - clinician assessment history (list, detail, soft-delete)
+- nested role-based router architecture (Module pattern)
 
 Not yet implemented:
 
