@@ -62,13 +62,15 @@ Goal:
 
 Work items:
 
-1. add Supabase database client configuration to the backend
+1. add Supabase database client configuration to the backend [completed]
 2. define environment variables for database access
-3. create the initial `users` table
-4. create the initial `assessments` table
-5. introduce a minimal persistence layer for assessment writes
-6. persist clinician assessment results after successful prediction
-7. decide whether member self-assessments should be stored from the first release or only clinician-submitted records initially
+3. create the initial `users` table [completed]
+4. create the initial `assessments` table [completed]
+5. create the initial `notifications` table [completed]
+6. put ORM models in place for `users`, `assessments`, and `notifications` [completed]
+7. introduce a minimal persistence layer for assessment writes
+8. persist clinician assessment results after successful prediction
+9. decide whether member self-assessments should be stored from the first release or only clinician-submitted records initially
 
 Definition of done:
 

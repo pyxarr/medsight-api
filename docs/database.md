@@ -349,9 +349,6 @@ Important principles:
 
 The following do not currently exist in `medsight-api`:
 
-- Supabase database client initialisation
-- SQL migration files
-- ORM models
 - repository or service layer for persistence
 - assessment storage on successful prediction
 - retrieval endpoints for historical records

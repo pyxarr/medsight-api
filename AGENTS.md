@@ -137,5 +137,7 @@ def calculate_risk_score() -> float:
 - Never make unsolicited refactoring changes
 - Always explain what you are about to do and why before doing it
 - After completing a task, state clearly what was done and what the next logical step is
+- After completing any task, if the work has not been committed yet, always suggest a conventional commit message covering everything that was done. Never wait to be asked.
+- After any task is committed or completed, always check whether any of the following docs need updating and suggest the changes: `docs/rules.md`, `docs/architecture.md`, `docs/api.md`, `docs/ml-pipeline.md`, `docs/database.md`, `docs/plan.md`, `README.md`. Never wait to be asked — flag it proactively after every commit.
 - If a task is ambiguous, ask for clarification before proceeding
 - If a rule in `docs/rules.md` conflicts with an instruction, follow `docs/rules.md` and flag the conflict

@@ -286,7 +286,7 @@ Implemented now:
 
 Not implemented yet:
 
-- Supabase database reads and writes
+- Database reads and writes in API routes (schema and ORM models are in place)
 - assessment history persistence
 - batch CSV upload endpoint
 - profile endpoints
