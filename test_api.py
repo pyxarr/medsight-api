@@ -1,6 +1,54 @@
+from datetime import datetime, timedelta, timezone
+import os
+import uuid
+
+from dotenv import load_dotenv
+import jwt
 import requests
 
+load_dotenv()
+
 BASE_URL = "http://127.0.0.1:8000/api"
+
+
+def mint_test_token(role):
+    secret = os.getenv("SUPABASE_JWT_SECRET")
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(uuid.uuid4()),
+        "email": f"{role}@medsight.local",
+        "aud": "authenticated",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(hours=1)).timestamp()),
+        "user_metadata": {
+            "role": role,
+        },
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def resolve_assessment_id(response, headers, patient_id):
+    response_payload = response.json()
+    assessment_id = response_payload.get("id")
+    if assessment_id is not None:
+        return assessment_id
+
+    history_response = requests.get(
+        f"{BASE_URL}/clinician/assessments",
+        headers=headers,
+        params={"patient_id": patient_id},
+    )
+    history_payload = history_response.json()
+    results = history_payload.get("results", [])
+    return results[0]["id"] if results else None
+
+
+member_headers = {
+    "Authorization": f"Bearer {mint_test_token('member')}"
+}
+clinician_headers = {
+    "Authorization": f"Bearer {mint_test_token('clinician')}"
+}
 
 
 def print_result(title, response):
@@ -15,7 +63,7 @@ def print_result(title, response):
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 1 — Patient assess — Low risk
 # ─────────────────────────────────────────────────────────────────────────────
-response = requests.post(f"{BASE_URL}/patient/assess", json={
+response = requests.post(f"{BASE_URL}/member/assess", headers=member_headers, json={
     "patient_id": "P-2024-0001",
     "clinical_data": {
         "age":                    25,
@@ -34,7 +82,7 @@ print_result("PATIENT VIEW — LOW RISK", response)
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 2 — Patient assess — High risk
 # ─────────────────────────────────────────────────────────────────────────────
-response = requests.post(f"{BASE_URL}/patient/assess", json={
+response = requests.post(f"{BASE_URL}/member/assess", headers=member_headers, json={
     "patient_id": "P-2024-0002",
     "clinical_data": {
         "age":                    62,
@@ -53,7 +101,7 @@ print_result("PATIENT VIEW — HIGH RISK", response)
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 3 — Doctor assess — Clinical only
 # ─────────────────────────────────────────────────────────────────────────────
-response = requests.post(f"{BASE_URL}/doctor/assess", json={
+response = requests.post(f"{BASE_URL}/clinician/assess", headers=clinician_headers, json={
     "patient_id": "P-2024-0003",
     "clinical_data": {
         "age":                    45,
@@ -67,12 +115,13 @@ response = requests.post(f"{BASE_URL}/doctor/assess", json={
     }
 })
 print_result("DOCTOR VIEW — CLINICAL ONLY", response)
+test_3_assessment_id = resolve_assessment_id(response, clinician_headers, "P-2024-0003")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 4 — Doctor assess — Clinical + FNA biopsy
 # ─────────────────────────────────────────────────────────────────────────────
-response = requests.post(f"{BASE_URL}/doctor/assess", json={
+response = requests.post(f"{BASE_URL}/clinician/assess", headers=clinician_headers, json={
     "patient_id": "P-2024-0004",
     "clinical_data": {
         "age":                    55,
@@ -123,7 +172,7 @@ print_result("DOCTOR VIEW — CLINICAL + FNA BIOPSY", response)
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 5 — Doctor assess — All 3 datasets
 # ─────────────────────────────────────────────────────────────────────────────
-response = requests.post(f"{BASE_URL}/doctor/assess", json={
+response = requests.post(f"{BASE_URL}/clinician/assess", headers=clinician_headers, json={
     "patient_id": "P-2024-0005",
     "clinical_data": {
         "age":                    58,
@@ -168,7 +217,6 @@ response = requests.post(f"{BASE_URL}/doctor/assess", json={
         "worst_fractal_dimension": 0.08902,
     },
     "blood_panel": {
-        "age":                                    58,
         "body_mass_index":                        27.5,
         "glucose":                                102.0,
         "insulin":                                8.5,
@@ -180,3 +228,44 @@ response = requests.post(f"{BASE_URL}/doctor/assess", json={
     }
 })
 print_result("DOCTOR VIEW — ALL 3 DATASETS", response)
+test_5_assessment_id = resolve_assessment_id(response, clinician_headers, "P-2024-0005")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Test 6 — Clinician assessments — List history
+# ─────────────────────────────────────────────────────────────────────────────
+response = requests.get(
+    f"{BASE_URL}/clinician/assessments",
+    headers=clinician_headers,
+)
+print_result("CLINICIAN HISTORY — LIST ASSESSMENTS", response)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Test 7 — Clinician assessments — Full detail
+# ─────────────────────────────────────────────────────────────────────────────
+response = requests.get(
+    f"{BASE_URL}/clinician/assessments/{test_5_assessment_id}",
+    headers=clinician_headers,
+)
+print_result("CLINICIAN HISTORY — FULL DETAIL", response)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Test 8 — Clinician assessments — Soft delete
+# ─────────────────────────────────────────────────────────────────────────────
+response = requests.delete(
+    f"{BASE_URL}/clinician/assessments/{test_3_assessment_id}",
+    headers=clinician_headers,
+)
+print_result("CLINICIAN HISTORY — SOFT DELETE", response)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Test 9 — Clinician assessments — Re-fetch deleted record
+# ─────────────────────────────────────────────────────────────────────────────
+response = requests.get(
+    f"{BASE_URL}/clinician/assessments/{test_3_assessment_id}",
+    headers=clinician_headers,
+)
+print_result("CLINICIAN HISTORY — DELETED RECORD RETURNS 404", response)

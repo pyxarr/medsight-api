@@ -1,3 +1,6 @@
+import sys
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from ml.data.wdbc_loader import load_wdbc
 from ml.data.ucth_loader import load_ucth
 from ml.data.coimbra_loader import load_coimbra
