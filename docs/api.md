@@ -98,6 +98,9 @@ require_role("clinician")
 | `GET` | `/` | No | None | Health check |
 | `POST` | `/api/member/assess` | Yes | `member` | Simplified clinical assessment |
 | `POST` | `/api/clinician/assess` | Yes | `clinician` | Detailed multi-input assessment |
+| `GET` | `/api/clinician/assessments` | Yes | `clinician` | Paginated assessment history list |
+| `GET` | `/api/clinician/assessments/{id}` | Yes | `clinician` | Full assessment detail record |
+| `DELETE` | `/api/clinician/assessments/{id}` | Yes | `clinician` | Soft delete assessment record |
 
 ## 5. Health Route
 
@@ -364,7 +367,8 @@ Inside `api/routers/predict.py`, the route performs these steps:
 8. call the ensemble with all available DataFrames
 9. preprocess the available DataFrames again for SHAP explanation
 10. call `explainer.explain(...)`
-11. return the detailed report
+11. persist the result bundle to the `assessments` table
+12. return the detailed report
 
 ### 8.3 Response Shape
 
@@ -477,16 +481,13 @@ These are treated as application-scoped runtime dependencies. Routes do not crea
 | Valid token but wrong role | `403` | Raised by `require_role()` |
 
 ### 10.2 Validation Errors
+...
+### 10.3 Persistence Errors
+When a database write fails during an assessment, the API returns `HTTP 500` with a structured error body to prevent silent data loss of clinical audit trails.
 
-Invalid request bodies return:
+### 10.4 Startup Errors
+...
 
-```text
-422 Unprocessable Entity
-```
-
-This is handled by FastAPI and Pydantic automatically.
-
-### 10.3 Startup Errors
 
 If required artefacts are missing from `ml/saved_models/`, application startup fails during the lifespan initialisation sequence. The backend does not silently retrain or continue with partial machine learning state.
 
@@ -496,17 +497,14 @@ If required artefacts are missing from `ml/saved_models/`, application startup f
 - all protected requests require valid Supabase JWTs
 - clinician blood panel payloads must not include `age`; the backend derives it from `clinical_data.age`
 - UCTH clinical data is always required because the ensemble always depends on that pathway
-- current responses do not yet include persisted assessment identifiers, timestamps, or database-backed history
 
 ## 12. Planned API Expansion
 
 The current API surface only covers prediction. The repository structure and documentation anticipate future routes for:
 
-- assessment history
 - batch CSV upload
 - community features
 - notifications
 - profile management
-- database-backed assessment retrieval and deletion
 
 Those routes do not exist in the current codebase and should be documented separately once implemented.

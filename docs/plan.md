@@ -16,11 +16,11 @@ Already implemented:
 - weighted multi-model inference
 - SHAP explainability for clinician output
 - out-of-distribution warnings for UCTH clinical features
+- database persistence for clinician assessments
+- clinician assessment history (list, detail, soft-delete)
 
 Not yet implemented:
 
-- database persistence
-- clinician assessment history
 - batch CSV upload endpoint
 - community endpoints
 - notifications
@@ -63,13 +63,13 @@ Goal:
 Work items:
 
 1. add Supabase database client configuration to the backend [completed]
-2. define environment variables for database access
+2. define environment variables for database access [completed]
 3. create the initial `users` table [completed]
 4. create the initial `assessments` table [completed]
 5. create the initial `notifications` table [completed]
 6. put ORM models in place for `users`, `assessments`, and `notifications` [completed]
-7. introduce a minimal persistence layer for assessment writes
-8. persist clinician assessment results after successful prediction
+7. introduce a minimal persistence layer for assessment writes [completed]
+8. persist clinician assessment results after successful prediction [completed]
 9. decide whether member self-assessments should be stored from the first release or only clinician-submitted records initially
 
 Definition of done:
@@ -85,11 +85,11 @@ Goal:
 
 Work items:
 
-1. add endpoint for listing assessments by clinician
-2. support filtering by patient id, date, and risk level
-3. support retrieval of a single stored assessment detail record
-4. support delete or soft-delete behaviour for obsolete records
-5. shape the returned history payload so it matches the clinician product requirements
+1. add endpoint for listing assessments by clinician [completed]
+2. support filtering by patient id, date, and risk level [completed]
+3. support retrieval of a single stored assessment detail record [completed]
+4. support delete or soft-delete behaviour for obsolete records [completed]
+5. shape the returned history payload so it matches the clinician product requirements [completed]
 
 Definition of done:
 
@@ -255,5 +255,3 @@ This order builds around the current strength of the repository: prediction alre
 The next highest-value backend actions are:
 
 1. update local API verification to the current auth-protected route contract
-2. implement Supabase database access and the initial `assessments` persistence path
-3. add clinician assessment history endpoints on top of persisted records

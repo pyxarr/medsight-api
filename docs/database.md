@@ -2,13 +2,14 @@
 
 ## 1. Current State
 
-The current `medsight-api` codebase does not yet read from or write to a database. There are no database clients, no repository layer, no persistence models, and no SQL migrations in the repository at this stage.
+The `medsight-api` codebase now includes a database access layer and persistence for clinician assessments. The repository layer, persistence models, and associated SQL migrations are implemented.
 
-What exists today is the authentication boundary for a database-backed system:
-
-- the mobile client authenticates with Supabase
-- the backend verifies Supabase-issued JWTs
-- user identity and role information are extracted from the token
+What exists today:
+- a Supabase PostgreSQL connection via SQLAlchemy (asyncpg)
+- a repository layer for assessment CRUD operations
+- automatic persistence of clinician assessment results
+- retrieval and soft-deletion endpoints for clinician assessment history
+- authentication boundary verified via Supabase JWTs
 
 This means database architecture must be described in two parts:
 
@@ -144,7 +145,7 @@ Suggested columns:
 | `created_at` | `timestamp with time zone` | Record creation time |
 | `updated_at` | `timestamp with time zone` | Last update time |
 
-### 6.2 `assessments`
+### 6.2 `assessments` (Implemented)
 
 Purpose:
 
@@ -349,10 +350,9 @@ Important principles:
 
 The following do not currently exist in `medsight-api`:
 
-- repository or service layer for persistence
-- assessment storage on successful prediction
-- retrieval endpoints for historical records
 - notification storage and delivery
+- application-level user profile management (the `users` table exists but is not yet actively managed by the API)
+- community feature persistence
 
 This document is therefore partly architectural target state and partly implementation boundary record.
 
@@ -360,10 +360,10 @@ This document is therefore partly architectural target state and partly implemen
 
 When database work begins, the most sensible order is:
 
-1. introduce a Supabase database access layer
-2. create `users` and `assessments` tables
-3. persist clinician assessment results first
-4. add history retrieval for clinicians
+1. [completed] introduce a Supabase database access layer
+2. [completed] create `users` and `assessments` tables
+3. [completed] persist clinician assessment results first
+4. [completed] add history retrieval for clinicians
 5. add member-linked assessment persistence where appropriate
 6. introduce `notifications`
 7. expand into community tables and related endpoints

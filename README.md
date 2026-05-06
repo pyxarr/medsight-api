@@ -18,7 +18,7 @@ The current backend exposes protected assessment endpoints for two roles:
 - `member`: simplified, clinical-data-only assessment
 - `clinician`: detailed multi-input assessment with explainability and warnings
 
-Persistent application state is planned for Supabase. The current codebase already verifies Supabase-issued JWTs but does not yet persist assessments or user records to a database.
+Persistent application state is managed in Supabase. The codebase verifies Supabase-issued JWTs and persists clinician assessments and user records to a database.
 
 ## Quick Start 🚀
 
@@ -109,6 +109,9 @@ source .venv/Scripts/activate
 
 ```env
 SUPABASE_JWT_SECRET=your_supabase_jwt_secret_here
+DATABASE_URL=your_postgresql_connection_string
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SECRET_KEY=your_supabase_service_role_key
 ```
 
 `SUPABASE_JWT_SECRET` is required because every protected endpoint verifies Supabase-issued JWTs locally.
@@ -173,6 +176,18 @@ Purpose:
 - accepts optional biopsy data
 - accepts optional blood panel data
 - returns detailed ensemble output, SHAP drivers, and out-of-distribution warnings
+
+### Clinician History
+```http
+GET /api/clinician/assessments
+GET /api/clinician/assessments/{id}
+DELETE /api/clinician/assessments/{id}
+Authorization: Bearer <supabase_jwt>
+```
+Purpose:
+- retrieve a paginated list of past assessments
+- view detailed records of specific assessments
+- soft-delete obsolete assessment records
 
 ## Authentication 🔐
 
@@ -283,11 +298,11 @@ Implemented now:
 - persisted model loading from disk
 - SHAP explainability for clinician results
 - out-of-distribution warnings on UCTH clinical input
+- clinician assessment persistence and history management
+- Supabase database integration via SQLAlchemy
 
 Not implemented yet:
 
-- Database reads and writes in API routes (schema and ORM models are in place)
-- assessment history persistence
 - batch CSV upload endpoint
 - profile endpoints
 - community endpoints

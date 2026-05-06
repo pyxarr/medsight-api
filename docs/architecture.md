@@ -45,10 +45,21 @@ medsight-api/                               # Backend and machine learning repos
 │   │   └── auth.py                         # JWT verification and role enforcement helpers
 │   ├── routers/                            # API route handlers
 │   │   ├── __init__.py                     # Marks api.routers as a Python package
-│   │   └── predict.py                      # Member and clinician assessment endpoints
-│   └── schemas/                            # Pydantic request schema package
-│       ├── __init__.py                     # Marks api.schemas as a Python package
-│       └── assessment.py                   # Assessment request models for member and clinician flows
+│   │   └── predict.py                      # Assessment and history endpoints
+│   ├── schemas/                            # Pydantic request schema package
+│   │   ├── __init__.py                     # Marks api.schemas as a Python package
+│   │   ├── assessment.py                   # Assessment request models for member and clinician flows
+│   │   └── assessment_history.py           # Response models for assessment history and details
+│   └── db/                                 # Database access layer
+│       ├── __init__.py                     # Marks api.db as a Python package
+│       ├── base.py                         # SQLAlchemy DeclarativeBase
+│       ├── session.py                      # Async session configuration
+│       ├── models/                         # ORM models
+│       │   ├── __init__.py                 # Marks api.db.models as a Python package
+│       │   └── assessment.py               # Assessment table definition
+│       └── repositories/                   # Data access repositories
+│           ├── __init__.py                 # Marks api.db.repositories as a Python package
+│           └── assessment_repository.py    # CRUD operations for assessments
 ├── ml/                                     # Machine learning package
 │   ├── __init__.py                         # Marks ml as a Python package
 │   ├── data/                               # Dataset loading logic
@@ -136,12 +147,15 @@ The backend expects the Supabase JWT payload structure to provide:
 
 ### 4.3 Routers (`api/routers/predict.py`)
 
-`api/routers/predict.py` contains the assessment endpoints.
+`api/routers/predict.py` contains the assessment and history endpoints.
 
 - `POST /api/member/assess` requires `role == "member"`, accepts clinical data only, and returns a simplified member-facing result.
-- `POST /api/clinician/assess` requires `role == "clinician"`, accepts clinical data plus optional biopsy data and optional blood panel data, and returns a full clinician report.
+- `POST /api/clinician/assess` requires `role == "clinician"`, accepts clinical data plus optional biopsy data and optional blood panel data, and returns a full clinician report. This endpoint persists the result to the database.
+- `GET /api/clinician/assessments` requires `role == "clinician"`, returns a paginated list of previous assessments.
+- `GET /api/clinician/assessments/{id}` requires `role == "clinician"`, returns a specific assessment record.
+- `DELETE /api/clinician/assessments/{id}` requires `role == "clinician"`, performs a soft-delete of the assessment record.
 
-Both endpoints are intentionally thin. They construct DataFrames from validated request models, call the already-loaded machine learning components, and shape the response body. Business rules belong in reusable machine learning and utility components, not embedded directly inside endpoint bodies.
+Both endpoints are intentionally thin. They construct DataFrames from validated request models, call the already-loaded machine learning components, and shape the response body. Business rules and data access logic belong in reusable machine learning and repository components, not embedded directly inside endpoint bodies.
 
 ### 4.4 Schemas (`api/schemas/assessment.py`)
 
@@ -336,7 +350,8 @@ Every protected API request:
 7. The out-of-distribution detector checks `ucth_dataframe`.
 8. The ensemble predicts using all available DataFrames.
 9. The SHAP explainer generates feature-level explanations using the preprocessed features from every available dataset.
-10. The API returns the full clinician report.
+10. The `AssessmentRepository` persists the patient ID, input features, final risk score, and SHAP drivers to the `assessments` table.
+11. The API returns the full clinician report.
 
 ## 8. Technology Stack
 
@@ -359,9 +374,12 @@ Every protected API request:
 | Variable | Required | Description |
 | --- | --- | --- |
 | `SUPABASE_JWT_SECRET` | Yes | Used by PyJWT to verify Supabase-issued tokens |
+| `DATABASE_URL` | Yes | Connection string for the Supabase PostgreSQL database |
+| `SUPABASE_URL` | Yes | Base URL for Supabase API services |
+| `SUPABASE_SECRET_KEY` | Yes | Service role key for privileged Supabase operations |
 
 More variables will be added as Supabase database integration is implemented.
 
 ## 10. Planned Additions
 
-The current architecture is designed to expand into persistent product workflows without changing the core machine learning serving model. Planned additions include Supabase database integration for an `assessments` table, `users` table, and `notifications` table. The API surface will expand beyond prediction to cover assessment history, batch upload, community, notifications, and profile flows. Clinician assessment output is also expected to grow into PDF report generation for export and sharing. Research workflows will require a dedicated batch CSV processing endpoint. Mobile engagement flows are expected to add push notifications through Expo Notifications.
+The current architecture is designed to expand into persistent product workflows without changing the core machine learning serving model. Planned additions include `users` table and `notifications` table. The API surface will expand beyond prediction and history to cover batch upload, community, notifications, and profile flows. Clinician assessment output is also expected to grow into PDF report generation for export and sharing. Research workflows will require a dedicated batch CSV processing endpoint. Mobile engagement flows are expected to add push notifications through Expo Notifications.
