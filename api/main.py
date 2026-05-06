@@ -3,6 +3,10 @@ load_dotenv()
 
 from fastapi import FastAPI
 from api.routers import predict
+# Register ORM model metadata before startup so SQLAlchemy is aware of all tables.
+import api.models.user
+import api.models.assessment
+import api.models.notification
 from contextlib import asynccontextmanager
 from pathlib import Path
 import joblib
@@ -18,7 +22,9 @@ SAVED_MODELS_DIRECTORY = Path("ml/saved_models")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Load everything from disk on startup
+    """Load long-lived runtime dependencies before serving requests."""
+    # Keep startup loading explicit because model artefacts are deployment assets rather
+    # than request-scoped state and should fail fast if they are missing.
     print("Loading ML artifacts from disk...")
     
     # 1. Load ensemble
@@ -60,4 +66,5 @@ app.include_router(predict.router, prefix="/api")
 
 @app.get("/")
 async def root():
+    """Return a minimal health response for quick availability checks."""
     return {"message": "Breast Cancer DSS API is running."}

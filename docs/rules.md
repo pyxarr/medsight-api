@@ -431,6 +431,16 @@ local
 - Docstrings must follow `PEP 257`.
 - Use triple double quotes for docstrings.
 - Write docstrings in the imperative mood.
+- Every class must have a docstring explaining what it represents.
+- Every function and method must have a docstring in imperative mood explaining what it does.
+- Never state the obvious.
+- A comment above `import os` saying `# import os` is forbidden.
+- Where a design decision was made, explain it in a comment.
+- Explain decisions such as why `expire_on_commit=False`, why `NullPool`, and why a column is named differently from its Python attribute.
+- Always use `server_default` for timestamps so the database clock is authoritative regardless of what process inserts the row.
+- Always comment whether `ondelete="CASCADE"` or `ondelete="SET NULL"` was chosen and why at the point of the foreign key definition.
+- Use British English in all comments and docstrings.
+- Do not use filler phrases in comments.
 
 Good docstring example:
 
