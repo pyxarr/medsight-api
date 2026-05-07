@@ -97,7 +97,8 @@ require_role("clinician")
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | No | None | Health check |
 | `POST` | `/api/member/assess` | Yes | `member` | Simplified clinical assessment |
-| `POST` | `/api/clinician/assess` | Yes | `clinician` | Detailed multi-input assessment |
+| `POST` | `/api/clinician/assess` | Yes | `clinician` | Detailed multi-input assessment (Deprecated) |
+| `POST` | `/api/clinician/manual-assess` | Yes | `clinician` | Manual diagnostic entry (Clinical + Blood) |
 | `GET` | `/api/clinician/assessments` | Yes | `clinician` | Paginated assessment history list |
 | `GET` | `/api/clinician/assessments/{id}` | Yes | `clinician` | Full assessment detail record |
 | `DELETE` | `/api/clinician/assessments/{id}` | Yes | `clinician` | Soft delete assessment record |

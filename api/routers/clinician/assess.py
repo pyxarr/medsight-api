@@ -7,20 +7,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.db.repositories.assessment_repository import create_clinician_assessment
 from api.db.session import get_db
 from api.lib.auth import CurrentUser, require_role
-from api.schemas.assessment import ClinicianPredictionRequest
+from api.schemas.assessment import (
+    ClinicianManualAssessRequest,
+    ClinicianPredictionRequest,
+)
 
 LOGGER = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.post("/assess")
-async def clinician_assess(
+
+async def _process_clinician_assessment(
     request: Request,
     body: ClinicianPredictionRequest,
-    current_user: CurrentUser = Depends(require_role("clinician")),
-    database_session: AsyncSession = Depends(get_db),
-):
-    """Return a detailed clinician assessment report."""
+    current_user: CurrentUser,
+    database_session: AsyncSession,
+) -> dict:
+    """Internal helper to run ML inference and persist the clinician assessment result."""
     ensemble = request.app.state.ensemble
     ood_detector = request.app.state.ood_detector
     explainer = request.app.state.explainer
@@ -135,3 +138,47 @@ async def clinician_assess(
         )
 
     return response_payload
+
+
+@router.post("/assess", deprecated=True)
+async def clinician_assess(
+    request: Request,
+    body: ClinicianPredictionRequest,
+    current_user: CurrentUser = Depends(require_role("clinician")),
+    database_session: AsyncSession = Depends(get_db),
+):
+    """
+    Return a detailed clinician assessment report.
+    DEPRECATED: Use /manual-assess for UI-driven entries.
+    """
+    return await _process_clinician_assessment(
+        request=request,
+        body=body,
+        current_user=current_user,
+        database_session=database_session,
+    )
+
+
+@router.post("/manual-assess")
+async def clinician_manual_assess(
+    request: Request,
+    body: ClinicianManualAssessRequest,
+    current_user: CurrentUser = Depends(require_role("clinician")),
+    database_session: AsyncSession = Depends(get_db),
+):
+    """Return a detailed clinician assessment report from manual entry (excludes biopsy)."""
+    # Convert the manual request to the general clinician request format.
+    # This ensures compatibility with the processing logic.
+    general_body = ClinicianPredictionRequest(
+        patient_id=body.patient_id,
+        clinical_data=body.clinical_data,
+        blood_panel=body.blood_panel,
+        biopsy_data=None,
+    )
+
+    return await _process_clinician_assessment(
+        request=request,
+        body=general_body,
+        current_user=current_user,
+        database_session=database_session,
+    )

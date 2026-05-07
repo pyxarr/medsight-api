@@ -159,7 +159,7 @@ The API uses a nested module pattern to separate concerns by user role and featu
 - `assess.py`: Handles the simplified member assessment flow.
 
 #### Clinician Domain (`api/routers/clinician/`)
-- `assess.py`: Handles detailed clinician assessments and (future) batch uploads. This endpoint persists the result to the database.
+- `assess.py`: Handles detailed clinician assessments (including the new manual entry path) and (future) batch uploads. This endpoint persists the result to the database.
 - `history.py`: Handles paginated history lists, detailed record retrieval, and soft-deletion of assessments.
 
 This structure ensures that as the API expands, files remain small and dependencies remain isolated. For example, the history router does not need to load machine learning artefacts, while the assessment router does not need to manage pagination logic.
