@@ -159,8 +159,9 @@ The API uses a nested module pattern to separate concerns by user role and featu
 - `assess.py`: Handles the simplified member assessment flow.
 
 #### Clinician Domain (`api/routers/clinician/`)
-- `assess.py`: Handles detailed clinician assessments (including the new manual entry path) and (future) batch uploads. This endpoint persists the result to the database.
+- `assess.py`: Handles clinician assessments via manual entry or bulk CSV upload. Both paths persist results to the database.
 - `history.py`: Handles paginated history lists, detailed record retrieval, and soft-deletion of assessments.
+- `inference_service.py`: Decouples the ML inference, OOD checking, and SHAP explanation logic from the route handlers.
 
 This structure ensures that as the API expands, files remain small and dependencies remain isolated. For example, the history router does not need to load machine learning artefacts, while the assessment router does not need to manage pagination logic.
 
@@ -347,18 +348,21 @@ Every protected API request:
 7. The API returns a simplified response containing `risk_level`, `guidance`, `has_warning`, and `warning_message`.
 
 ### 7.2 Clinician Assessment Request
-
-1. A clinician submits a form or batch-driven assessment flow in the Expo application.
-2. The Expo client sends `POST /api/clinician/assess` with a JWT and a `ClinicianPredictionRequest` body.
+1. A clinician submits a form (Manual) or a CSV file (Batch) in the Expo application.
+2. The Expo client sends `POST /api/clinician/manual-assess` or `POST /api/clinician/batch-assess` with a JWT.
 3. FastAPI verifies the JWT and checks that `role == "clinician"`.
-4. `ClinicalData` is converted into `ucth_dataframe`.
-5. `BiopsyData`, when present, is converted into `wisconsin_dataframe`, and columns are renamed to the expected WDBC feature names.
-6. `BloodPanelData`, when present, is converted into `coimbra_dataframe`, with age injected from `ClinicalData`.
-7. The out-of-distribution detector checks `ucth_dataframe`.
-8. The ensemble predicts using all available DataFrames.
-9. The SHAP explainer generates feature-level explanations using the preprocessed features from every available dataset.
-10. The `AssessmentRepository` persists the patient ID, input features, final risk score, and SHAP drivers to the `assessments` table.
-11. The API returns the full clinician report.
+4. For Manual entry: `PatientRepository` creates or retrieves the patient identity.
+5. For Batch entry: The CSV is uploaded to Supabase Storage, a `Batch` record is created, and the file is parsed row-by-row.
+6. For each assessment:
+    - `ClinicalData` is converted into `ucth_dataframe`.
+    - `BiopsyData`, when present, is converted into `wisconsin_dataframe`.
+    - `BloodPanelData`, when present, is converted into `coimbra_dataframe`.
+    - The out-of-distribution detector checks `ucth_dataframe`.
+    - The ensemble predicts using all available DataFrames.
+    - The SHAP explainer generates feature-level explanations.
+7. The `AssessmentRepository` persists the patient ID, input features, final risk score, and SHAP drivers to the `assessments` table.
+8. The API returns the full clinician report (or a batch summary).
+
 
 ## 8. Technology Stack
 
@@ -382,8 +386,8 @@ Every protected API request:
 | --- | --- | --- |
 | `SUPABASE_JWT_SECRET` | Yes | Used by PyJWT to verify Supabase-issued tokens |
 | `DATABASE_URL` | Yes | Connection string for the Supabase PostgreSQL database |
-| `SUPABASE_URL` | Yes | Base URL for Supabase API services |
-| `SUPABASE_SECRET_KEY` | Yes | Service role key for privileged Supabase operations |
+| `SUPABASE_URL` | Yes | Base URL for Supabase API services (used for Storage) |
+| `SUPABASE_SECRET_KEY` | Yes | Service role key for privileged Supabase operations (used for Storage) |
 
 More variables will be added as Supabase database integration is implemented.
 

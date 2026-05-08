@@ -97,24 +97,21 @@ Definition of done:
 - clinicians can retrieve, inspect, and remove historical assessments through the API
 
 ## 7. Phase 4: Batch Upload for Clinicians
-
 Goal:
-
 - support higher-volume clinician and research workflows
 
 Work items:
-
-1. define the CSV contract for all supported input columns
-2. create a downloadable template format and document it
-3. add a batch upload endpoint
-4. parse CSV rows into the existing request schema equivalents
-5. run inference row by row using the current ensemble and explainer pipeline
-6. return structured row-level success and failure output
-7. decide whether batch uploads persist each row as a normal assessment record
+1. [completed] define the CSV contract for all supported input columns
+2. [completed] create a downloadable template format and document it
+3. [completed] add a batch upload endpoint
+4. [completed] parse CSV rows into the existing request schema equivalents
+5. [completed] run inference row by row using the current ensemble and explainer pipeline
+6. [completed] return structured row-level success and failure output
+7. [completed] decide whether batch uploads persist each row as a normal assessment record
 
 Definition of done:
-
 - clinicians can submit a CSV and receive machine-readable per-row results
+
 
 ## 8. Phase 5: Profile and Verification Workflows
 
@@ -252,7 +249,7 @@ This order builds around the current strength of the repository: prediction alre
 - outdated verification scripts masking API regressions
 
 ## 15. Immediate Next Steps
-
 The next highest-value backend actions are:
+1. update local API verification scripts (`test_api.py`) to cover manual and batch assessment flows
+2. implement patient profile and verification endpoints
 
-1. update local API verification to the current auth-protected route contract

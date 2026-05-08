@@ -167,18 +167,16 @@ Purpose:
 - returns a simplified result without technical model detail
 
 ### Clinician Assessment
-
 ```http
-POST /api/clinician/assess
+POST /api/clinician/manual-assess
+POST /api/clinician/batch-assess
 Authorization: Bearer <supabase_jwt>
 ```
-
 Purpose:
-
-- requires clinical data
-- accepts optional biopsy data
-- accepts optional blood panel data
+- Manual: accepts clinical data and optional biopsy/blood data for single patient entry
+- Batch: accepts CSV upload for bulk processing and session tracking
 - returns detailed ensemble output, SHAP drivers, and out-of-distribution warnings
+
 
 ### Clinician History
 ```http
@@ -288,7 +286,7 @@ Start the API first, then run:
 .venv/Scripts/python test_api.py
 ```
 
-`test_api.py` exercises the current `/api/member/assess` and `/api/clinician/assess` routes across five scenarios and requires a valid JWT.
+`test_api.py` exercises the current `/api/member/assess`, `/api/clinician/manual-assess`, and `/api/clinician/batch-assess` routes across five scenarios and requires a valid JWT.
 
 ## Current State 📍
 
@@ -302,11 +300,11 @@ Implemented now:
 - SHAP explainability for clinician results
 - out-of-distribution warnings on UCTH clinical input
 - clinician assessment persistence and history management
+- clinician batch upload and storage integration
 - Supabase database integration via SQLAlchemy
 
 Not implemented yet:
 
-- batch CSV upload endpoint
 - profile endpoints
 - community endpoints
 - notifications

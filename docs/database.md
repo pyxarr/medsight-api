@@ -1,15 +1,17 @@
 ## MedSight API Database Architecture
 
 ## 1. Current State
-
-The `medsight-api` codebase now includes a database access layer and persistence for clinician assessments. The repository layer, persistence models, and associated SQL migrations are implemented.
+The `medsight-api` codebase includes a database access layer and persistence for clinician assessments, patient identity, and batch sessions. The repository layer, persistence models, and associated SQL migrations are implemented.
 
 What exists today:
 - a Supabase PostgreSQL connection via SQLAlchemy (asyncpg)
-- a repository layer for assessment CRUD operations
+- a repository layer for assessment, patient, and batch CRUD operations
 - automatic persistence of clinician assessment results
+- patient identity management with `P-YYYY-SEQ` generation
+- batch session tracking for CSV uploads
 - retrieval and soft-deletion endpoints for clinician assessment history
 - authentication boundary verified via Supabase JWTs
+
 
 This means database architecture must be described in two parts:
 
@@ -119,37 +121,39 @@ This matters for traceability and safety review even if it is not yet implemente
 
 The following tables are the minimum practical database shape implied by the existing product requirements.
 
-### 6.1 `users`
-
+### 6.1 `patients` (Implemented)
 Purpose:
-
-- product-level user profile data keyed to Supabase auth identity
+- manage patient identity as a stable anchor for all assessment records
+- generate medical record identifiers in the `P-YYYY-SEQ` format
 
 Suggested columns:
-
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | `uuid` | Matches Supabase auth user id where possible |
-| `email` | `text` | Cached application email |
-| `role` | `text` | `member` or `clinician` |
-| `display_name` | `text` | Public-facing name |
-| `username` | `text` | Unique public handle |
-| `avatar_url` | `text` | Optional profile image |
-| `institution` | `text` | Clinician-only professional context |
-| `specialisation` | `text` | Clinician-only field |
-| `experience_years` | `integer` | Clinician-only field |
-| `location` | `text` | Region or institution location |
-| `medical_licence_number` | `text` | Clinician verification data |
-| `licence_document_url` | `text` | Stored file reference |
-| `is_verified` | `boolean` | Clinician verification badge state |
+| `id` | `uuid` | Primary key (Supabase gen_random_uuid) |
+| `patient_id` | `text` | Immutable medical record ID (e.g., P-2024-001) |
+| `first_name` | `text` | Patient given name |
+| `last_name` | `text` | Patient family name |
 | `created_at` | `timestamp with time zone` | Record creation time |
-| `updated_at` | `timestamp with time zone` | Last update time |
 
-### 6.2 `assessments` (Implemented)
-
+### 6.2 `batches` (Implemented)
 Purpose:
+- group multiple assessments from a single CSV upload session
+- track storage paths for audit and reprocessing
 
+Suggested columns:
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key (Supabase gen_random_uuid) |
+| `clinician_user_id` | `uuid` | Clinician who performed the upload |
+| `filename` | `text` | Original name of the uploaded CSV |
+| `file_path` | `text` | Path to the file in Supabase Storage |
+| `total_records` | `integer` | Total number of rows in the CSV |
+| `created_at` | `timestamp with time zone` | Upload timestamp |
+
+### 6.3 `assessments` (Implemented)
+Purpose:
 - persist completed assessment requests and responses for history and retrieval
+
 
 Suggested columns:
 
@@ -244,15 +248,19 @@ The target relationship shape is straightforward.
 
 ```text
 users
-  ├── one-to-many assessments
+  ├── one-to-many patients
+  ├── one-to-many batches
   ├── one-to-many notifications
   └── one-to-many community_posts
 
+patients
+  └── one-to-many assessments
+
+batches
+  └── one-to-many assessments
+
 community_posts
   └── self-referencing parent_post_id for reply threads
-
-assessments
-  └── optional links to member and clinician users
 ```
 
 This keeps the machine learning result record central while allowing product features to grow around it.
@@ -361,11 +369,12 @@ This document is therefore partly architectural target state and partly implemen
 When database work begins, the most sensible order is:
 
 1. [completed] introduce a Supabase database access layer
-2. [completed] create `users` and `assessments` tables
+2. [completed] create `users`, `patients`, and `batches` tables
 3. [completed] persist clinician assessment results first
 4. [completed] add history retrieval for clinicians
-5. add member-linked assessment persistence where appropriate
-6. introduce `notifications`
-7. expand into community tables and related endpoints
+5. [completed] implement clinician batch upload flow
+6. add member-linked assessment persistence where appropriate
+7. introduce `notifications`
+8. expand into community tables and related endpoints
 
 This sequence aligns with the current backend, where assessment generation already exists but persistence does not.
