@@ -2,16 +2,18 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID as PythonUUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from api.models.assessment import Assessment
-
+from api.models.patient import Patient
 
 async def create_clinician_assessment(
     database_session: AsyncSession,
-    clinician_user_id: str,
-    patient_id: str,
+    clinician_user_id: PythonUUID,
+    patient_id: PythonUUID,
+    patient_external_id: str,
     assessment_role: str,
     clinical_data: dict,
     biopsy_data: dict | None,
@@ -25,11 +27,13 @@ async def create_clinician_assessment(
     clinical_guidance: str,
     key_risk_drivers: list[dict] | dict | None,
     ood_warning: dict,
+    batch_id: PythonUUID | None = None,
 ) -> Assessment:
     """Create and persist a clinician assessment record."""
     assessment_record = Assessment(
-        clinician_user_id=PythonUUID(clinician_user_id),
+        clinician_user_id=clinician_user_id,
         patient_id=patient_id,
+        patient_external_id=patient_external_id,
         assessment_role=assessment_role,
         clinical_data=clinical_data,
         biopsy_data=biopsy_data,
@@ -43,6 +47,7 @@ async def create_clinician_assessment(
         clinical_guidance=clinical_guidance,
         key_risk_drivers=key_risk_drivers,
         ood_warning=ood_warning,
+        batch_id=batch_id,
     )
 
     database_session.add(assessment_record)
@@ -60,8 +65,9 @@ async def create_clinician_assessment(
 
 async def list_clinician_assessments(
     database_session: AsyncSession,
-    clinician_user_id: str,
-    patient_id: str | None,
+    clinician_user_id: PythonUUID,
+    patient_external_id: str | None,
+    patient_name: str | None,
     risk_level: str | None,
     date_from: date | None,
     date_to: date | None,
@@ -69,22 +75,30 @@ async def list_clinician_assessments(
     page_size: int,
 ) -> tuple[int, list[Assessment]]:
     """Return a paginated page of active clinician assessments."""
-    clinician_identifier = PythonUUID(clinician_user_id)
+    patient_join_required = patient_external_id is not None or patient_name is not None
     assessment_filters = [
-        Assessment.clinician_user_id == clinician_identifier,
-        # Exclude soft-deleted rows in SQL so pagination and counts stay consistent with
-        # the history view rather than shrinking after application-side filtering.
+        Assessment.clinician_user_id == clinician_user_id,
         Assessment.deleted_at.is_(None),
     ]
 
-    if patient_id is not None:
-        assessment_filters.append(Assessment.patient_id == patient_id)
+    if patient_external_id is not None:
+        assessment_filters.append(Assessment.patient_external_id == patient_external_id)
+
+    if patient_name is not None:
+        normalised_patient_name = f"%{patient_name.strip().lower()}%"
+        assessment_filters.append(
+            or_(
+                func.lower(Patient.first_name).like(normalised_patient_name),
+                func.lower(Patient.last_name).like(normalised_patient_name),
+                func.lower(func.concat(Patient.first_name, " ", Patient.last_name)).like(
+                    normalised_patient_name
+                ),
+            )
+        )
 
     if risk_level is not None:
         assessment_filters.append(Assessment.risk_level == risk_level)
 
-    # Translate calendar-date filters into timestamp ranges so PostgreSQL can still use
-    # created_at indexes instead of wrapping the column in a date() function.
     if date_from is not None:
         created_at_start = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
         assessment_filters.append(Assessment.created_at >= created_at_start)
@@ -97,12 +111,16 @@ async def list_clinician_assessments(
         )
         assessment_filters.append(Assessment.created_at < created_at_end)
 
-    total_query = (
-        select(func.count()).select_from(Assessment).where(*assessment_filters)
-    )
+    total_query = select(func.count()).select_from(Assessment)
+    assessments_query = select(Assessment).options(selectinload(Assessment.patient))
+
+    if patient_join_required:
+        total_query = total_query.join(Patient, Assessment.patient_id == Patient.id)
+        assessments_query = assessments_query.join(Patient, Assessment.patient_id == Patient.id)
+
+    total_query = total_query.where(*assessment_filters)
     assessments_query = (
-        select(Assessment)
-        .where(*assessment_filters)
+        assessments_query.where(*assessment_filters)
         .order_by(Assessment.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -119,17 +137,15 @@ async def list_clinician_assessments(
 
 async def get_clinician_assessment(
     database_session: AsyncSession,
-    clinician_user_id: str,
+    clinician_user_id: PythonUUID,
     assessment_id: PythonUUID,
 ) -> Assessment | None:
     """Return one active clinician assessment by identifier."""
     assessment_query = select(Assessment).where(
         Assessment.id == assessment_id,
-        Assessment.clinician_user_id == PythonUUID(clinician_user_id),
-        # Enforce the soft-delete boundary in SQL so deleted records cannot leak through
-        # alternative callers that forget to apply the history visibility rule.
+        Assessment.clinician_user_id == clinician_user_id,
         Assessment.deleted_at.is_(None),
-    )
+    ).options(selectinload(Assessment.patient), selectinload(Assessment.batch))
     assessment_result = await database_session.execute(assessment_query)
 
     return assessment_result.scalar_one_or_none()
@@ -137,7 +153,7 @@ async def get_clinician_assessment(
 
 async def soft_delete_clinician_assessment(
     database_session: AsyncSession,
-    clinician_user_id: str,
+    clinician_user_id: PythonUUID,
     assessment_id: PythonUUID,
 ) -> Assessment | None:
     """Apply a soft delete to one active clinician assessment."""
@@ -161,3 +177,43 @@ async def soft_delete_clinician_assessment(
     await database_session.refresh(assessment_record)
 
     return assessment_record
+
+
+async def list_batch_assessments(
+    database_session: AsyncSession,
+    clinician_user_id: PythonUUID,
+    batch_id: PythonUUID,
+) -> list[Assessment]:
+    """Return active assessments belonging to one clinician batch."""
+    assessments_query = (
+        select(Assessment)
+        .where(
+            Assessment.clinician_user_id == clinician_user_id,
+            Assessment.batch_id == batch_id,
+            Assessment.deleted_at.is_(None),
+        )
+        .options(selectinload(Assessment.patient), selectinload(Assessment.batch))
+        .order_by(Assessment.created_at.desc())
+    )
+    assessments_result = await database_session.execute(assessments_query)
+    return list(assessments_result.scalars().all())
+
+
+async def list_patient_assessments(
+    database_session: AsyncSession,
+    clinician_user_id: PythonUUID,
+    patient_external_id: str,
+) -> list[Assessment]:
+    """Return active assessments for one patient external identifier."""
+    assessments_query = (
+        select(Assessment)
+        .where(
+            Assessment.clinician_user_id == clinician_user_id,
+            Assessment.patient_external_id == patient_external_id,
+            Assessment.deleted_at.is_(None),
+        )
+        .options(selectinload(Assessment.patient), selectinload(Assessment.batch))
+        .order_by(Assessment.created_at.desc())
+    )
+    assessments_result = await database_session.execute(assessments_query)
+    return list(assessments_result.scalars().all())

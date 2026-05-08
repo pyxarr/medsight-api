@@ -9,7 +9,9 @@ load_dotenv()
 
 from api.db.base import Base, normalise_database_url
 import api.models.assessment
+import api.models.batch
 import api.models.notification
+import api.models.patient
 import api.models.user
 
 config = context.config

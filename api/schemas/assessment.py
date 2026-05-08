@@ -93,6 +93,7 @@ class ClinicianManualAssessRequest(BaseModel):
     Manual entry form — clinical data required, blood panel optional.
     Biopsy data is excluded to prevent lengthy manual input.
     """
-    patient_id:    str
+    first_name:    str
+    last_name:     str
     clinical_data: ClinicalData
     blood_panel:   Optional[BloodPanelData]  = None

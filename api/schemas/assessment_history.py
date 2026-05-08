@@ -1,57 +1,105 @@
 from datetime import datetime
-from typing import Any
-from uuid import UUID as PythonUUID
+from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
 
-class AssessmentHistorySummary(BaseModel):
-    """Represent a summary entry in clinician assessment history."""
+class AssessmentDeleteResponse(BaseModel):
+    """Represent a successful assessment delete response."""
 
-    model_config = ConfigDict(from_attributes=True)
+    detail: str
 
-    id: PythonUUID
+
+class AssessmentHistorySummaryResponse(BaseModel):
+    """Represent one clinician assessment summary row."""
+
+    id: UUID
     patient_id: str
+    first_name: str
+    last_name: str
+    patient_name: str
     risk_level: str | None
     risk_score: float | None
     confidence_percent: int | None
-    models_used: int | None
-    agreement: str | None
     created_at: datetime
+    batch_id: UUID | None = None
 
 
 class AssessmentHistoryListResponse(BaseModel):
-    """Represent a paginated clinician assessment history response."""
+    """Represent one paginated clinician assessment history page."""
 
     total: int
     page: int
     page_size: int
-    results: list[AssessmentHistorySummary]
+    results: list[AssessmentHistorySummaryResponse]
 
 
 class AssessmentHistoryDetailResponse(BaseModel):
-    """Represent the full stored clinician assessment record."""
+    """Represent one full clinician assessment history record."""
 
-    model_config = ConfigDict(from_attributes=True)
-
-    id: PythonUUID
+    id: UUID
     patient_id: str
-    clinical_data: dict[str, Any]
-    biopsy_data: dict[str, Any] | None
-    blood_panel_data: dict[str, Any] | None
+    first_name: str
+    last_name: str
+    patient_name: str
+    assessment_role: str
+    clinical_data: dict
+    biopsy_data: dict | None
+    blood_panel_data: dict | None
     risk_score: float | None
     risk_level: str | None
     confidence_percent: int | None
     agreement: str | None
     models_used: int | None
-    individual_scores: dict[str, Any] | None
+    individual_scores: dict | None
     clinical_guidance: str | None
-    key_risk_drivers: list[dict[str, Any]] | dict[str, Any] | None
-    ood_warning: dict[str, Any] | None
+    key_risk_drivers: list[dict] | dict | None
+    ood_warning: dict | None
+    created_at: datetime
+    batch_id: UUID | None = None
+
+
+class BatchRowResult(BaseModel):
+    """Represent the processing outcome for one batch CSV row."""
+
+    row_index: int
+    patient_id: str
+    patient_name: str
+    status: Literal["success", "failed"]
+    result: dict | None = None
+    error: str | None = None
+
+
+class BatchSummaryResponse(BaseModel):
+    """Represent one aggregate batch processing summary."""
+
+    total: int
+    success: int
+    failed: int
+
+
+class BatchAssessmentResponse(BaseModel):
+    """Represent the response payload for one batch assessment upload."""
+
+    batch_id: UUID
+    summary: BatchSummaryResponse
+    results: list[BatchRowResult]
+
+
+class BatchInfoResponse(BaseModel):
+    """Represent one clinician batch session summary."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    filename: str
+    file_path: str
+    total_records: int
     created_at: datetime
 
 
-class AssessmentDeleteResponse(BaseModel):
-    """Represent a successful clinician assessment deletion response."""
+class BatchListResponse(BaseModel):
+    """Represent a clinician batch history listing."""
 
-    detail: str
+    results: list[BatchInfoResponse]

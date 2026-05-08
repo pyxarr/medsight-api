@@ -7,7 +7,9 @@ from api.routers.clinician import clinician_router
 # Register ORM model metadata before startup so SQLAlchemy is aware of all tables.
 import api.models.user
 import api.models.assessment
+import api.models.batch
 import api.models.notification
+import api.models.patient
 from contextlib import asynccontextmanager
 from pathlib import Path
 import joblib
