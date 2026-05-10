@@ -53,7 +53,7 @@ async def create_clinician_assessment(
     database_session.add(assessment_record)
 
     try:
-        await database_session.commit()
+        await database_session.flush()
     except Exception:
         await database_session.rollback()
         raise
