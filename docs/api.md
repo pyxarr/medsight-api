@@ -48,7 +48,7 @@ Authorization: Bearer <supabase_jwt>
 
 ### 3.3 Verification Rules
 
-JWT verification is handled in `api/lib/auth.py`. Verification now uses ES256 asymmetric signing via the Supabase JWKS endpoint.
+JWT verification is handled in `api/lib/auth.py`. Verification now uses ES256 asymmetric signing via the Supabase JWKS endpoint. To account for potential clock skew between the Supabase auth server and this API server, a 60-second leeway is applied during token decoding.
 
 Required environment variable:
 

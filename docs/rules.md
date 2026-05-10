@@ -84,7 +84,6 @@ medsight-api/
 ├── docs/
 ├── train.py
 ├── test_shap.py
-├── test_api.py
 ├── pyproject.toml
 ├── .python-version
 ├── .env
@@ -345,7 +344,7 @@ ood_detector.pkl
 - JWT verification must use:
 
 ```python
-algorithms=["HS256"]
+algorithms=["ES256"]
 audience="authenticated"
 ```
 

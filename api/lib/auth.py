@@ -45,6 +45,8 @@ def get_current_user(
             signing_key.key,
             algorithms=["ES256"],
             audience="authenticated",
+            # Allow 60 seconds of clock skew between Supabase and this server.
+            leeway=60,
         )
     except jwt.PyJWTError:
         raise HTTPException(
