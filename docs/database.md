@@ -39,25 +39,7 @@ The broader project requirement is data sovereignty. Medical and user data must 
 
 ## 4. What the Backend Knows About Users Today
 
-The backend currently reconstructs a minimal authenticated user object from the JWT in `api/lib/auth.py`.
-
-Current runtime user shape:
-
-```python
-CurrentUser(
-    id: str,
-    email: str,
-    role: str,
-)
-```
-
-JWT claim mapping:
-
-- `sub` -> user id
-- `email` -> email
-- `user_metadata.role` -> role
-
-This is not persisted by the backend today. It is only used for request authorisation.
+The backend reconstructs a minimal authenticated user object from the JWT in `api/lib/auth.py` and persists a corresponding product-level record in the `users` table via an "upsert on first request" pattern.
 
 ## 5. Persistence Domains Planned for the Product
 

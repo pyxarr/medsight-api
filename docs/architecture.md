@@ -106,7 +106,6 @@ medsight-api/                               # Backend and machine learning repos
 ├── docs/                                   # Project documentation directory
 ├── train.py                                # Training and artefact generation entry point
 ├── test_shap.py                            # SHAP and training verification script
-├── test_api.py                             # API integration verification script
 ├── pyproject.toml                          # Project metadata and dependency configuration
 ├── .python-version                         # Python version pinning file
 ├── .env                                    # Local environment variables and secrets

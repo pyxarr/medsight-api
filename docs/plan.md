@@ -39,16 +39,15 @@ Not yet implemented:
 ## 4. Phase 1: Stabilise the Existing Assessment Core
 
 Goal:
-
 - make the current prediction surface reliable enough to build persistence and product flows around it
 
 Work items:
+1. [completed] update `test_api.py` to the live `/member/assess` and `/clinician/assess` routes
+2. [completed] adapt API verification to include valid JWT-backed requests
+3. [completed] confirm member and clinician payload examples match `api/schemas/assessment.py`
+4. [completed] verify blood panel documentation and client payloads do not send a duplicate `age` field
+5. [completed] standardise documented response contracts for both assessment routes
 
-1. update `test_api.py` to the live `/member/assess` and `/clinician/assess` routes
-2. adapt API verification to include valid JWT-backed requests
-3. confirm member and clinician payload examples match `api/schemas/assessment.py`
-4. verify blood panel documentation and client payloads do not send a duplicate `age` field
-5. standardise documented response contracts for both assessment routes
 
 Definition of done:
 
