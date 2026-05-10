@@ -293,6 +293,12 @@ async def clinician_batch_assess(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    if len(batch_dataframe) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CSV file contains no data rows.",
+        )
+
     storage_path = build_batch_storage_path(str(current_user.id), file.filename)
     try:
         stored_file_path = upload_batch_csv(file_bytes=file_bytes, storage_path=storage_path)
@@ -311,74 +317,87 @@ async def clinician_batch_assess(
         file_path=stored_file_path,
         total_records=len(batch_dataframe),
     )
+    batch_record_id = batch_record.id
 
     batch_results: list[BatchRowResult] = []
     success_count = 0
 
     for row_index, row_payload in batch_dataframe.iterrows():
-        raw_patient_name = _normalise_cell_value(row_payload.get("patient_name"))
-        patient_name = str(raw_patient_name or "")
-        raw_patient_external_id = _normalise_cell_value(row_payload.get("patient_id"))
-        fallback_patient_id = str(raw_patient_external_id or "")
+        # Each row runs inside a savepoint so a single row failure rolls back only
+        # that row's writes, leaving all previously flushed rows intact.
+        async with database_session.begin_nested() as savepoint:
+            try:
+                # Normalise before splitting so whitespace-only names are treated as missing.
+                raw_patient_name = _normalise_cell_value(row_payload.get("patient_name"))
+                patient_name = str(raw_patient_name or "")
+                raw_patient_external_id = _normalise_cell_value(row_payload.get("patient_id"))
+                # Keep a fallback for the failed row result in case the patient record
+                # is never created — avoids a NameError in the except blocks.
+                fallback_patient_id = str(raw_patient_external_id or "")
 
-        try:
-            first_name, last_name = _split_patient_name(patient_name)
-            patient_record = await patient_repository.get_or_create_by_external_id(
-                database_session=database_session,
-                first_name=first_name,
-                last_name=last_name,
-                patient_external_id=(
-                    str(raw_patient_external_id) if raw_patient_external_id is not None else None
-                ),
-            )
-            request_body = _build_batch_request(
-                row_payload=row_payload,
-                batch_dataframe=batch_dataframe,
-                patient_external_id=patient_record.patient_id,
-            )
-            response_payload = await _run_clinician_assessment_pipeline(
-                request=request,
-                body=request_body,
-                current_user=current_user,
-                database_session=database_session,
-                patient_uuid=patient_record.id,
-                batch_id=batch_record.id,
-            )
-            batch_results.append(
-                BatchRowResult(
-                    row_index=row_index + 1,
-                    patient_id=patient_record.patient_id,
-                    patient_name=f"{patient_record.first_name} {patient_record.last_name}",
-                    status="success",
-                    result=response_payload,
+                first_name, last_name = _split_patient_name(patient_name)
+                # Upsert the patient so repeat submissions for the same external ID
+                # do not create duplicate patient records.
+                patient_record = await patient_repository.get_or_create_by_external_id(
+                    database_session=database_session,
+                    first_name=first_name,
+                    last_name=last_name,
+                    patient_external_id=(
+                        str(raw_patient_external_id) if raw_patient_external_id is not None else None
+                    ),
                 )
-            )
-            success_count += 1
-        except HTTPException as exc:
-            await database_session.rollback()
-            batch_results.append(
-                BatchRowResult(
-                    row_index=row_index + 1,
-                    patient_id=fallback_patient_id,
-                    patient_name=patient_name,
-                    status="failed",
-                    error=str(exc.detail),
+                request_body = _build_batch_request(
+                    row_payload=row_payload,
+                    batch_dataframe=batch_dataframe,
+                    patient_external_id=patient_record.patient_id,
                 )
-            )
-        except Exception as exc:
-            await database_session.rollback()
-            batch_results.append(
-                BatchRowResult(
-                    row_index=row_index + 1,
-                    patient_id=fallback_patient_id,
-                    patient_name=patient_name,
-                    status="failed",
-                    error=str(exc),
+                # Runs OOD detection, ensemble prediction, SHAP explanation, and persistence.
+                response_payload = await _run_clinician_assessment_pipeline(
+                    request=request,
+                    body=request_body,
+                    current_user=current_user,
+                    database_session=database_session,
+                    patient_uuid=patient_record.id,
+                    batch_id=batch_record_id,
                 )
-            )
+                batch_results.append(
+                    BatchRowResult(
+                        row_index=row_index + 1,
+                        patient_id=patient_record.patient_id,
+                        patient_name=f"{patient_record.first_name} {patient_record.last_name}",
+                        status="success",
+                        result=response_payload,
+                    )
+                )
+                success_count += 1
+            except HTTPException as exc:
+                # Roll back only this row's savepoint — prior successful rows are unaffected.
+                await savepoint.rollback()
+                batch_results.append(
+                    BatchRowResult(
+                        row_index=row_index + 1,
+                        patient_id=fallback_patient_id,
+                        patient_name=patient_name,
+                        status="failed",
+                        error=str(exc.detail),
+                    )
+                )
+            except Exception as exc:
+                # Catch all other row-level failures, including validation and ML errors,
+                # so one bad row never terminates the entire batch.
+                await savepoint.rollback()
+                batch_results.append(
+                    BatchRowResult(
+                        row_index=row_index + 1,
+                        patient_id=fallback_patient_id,
+                        patient_name=patient_name,
+                        status="failed",
+                        error=str(exc),
+                    )
+                )
 
     return BatchAssessmentResponse(
-        batch_id=batch_record.id,
+        batch_id=batch_record_id,
         summary=BatchSummaryResponse(
             total=len(batch_dataframe),
             success=success_count,
