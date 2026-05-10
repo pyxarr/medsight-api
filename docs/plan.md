@@ -121,7 +121,7 @@ Goal:
 
 Work items:
 
-1. persist profile records in `users`
+1. [completed] persist profile records in `users` — implemented via the `get_or_create_from_auth_user` upsert pattern called from the clinician assessment pipeline and the `GET /api/users/me` bootstrap endpoint
 2. add clinician profile read and update endpoints
 3. add member profile endpoints once frontend design is settled
 4. add clinician verification submission flow

@@ -64,8 +64,9 @@ medsight-api/                               # Backend and machine learning repos
 │       │   ├── __init__.py                 # Marks api.db.models as a Python package
 │       │   └── assessment.py               # Assessment table definition
 │       └── repositories/                   # Data access repositories
-│           ├── __init__.py                 # Marks api.db.repositories as a Python package
-│           └── assessment_repository.py    # CRUD operations for assessments
+│           ├── __init__.py                     # Marks api.db.repositories as a Python package
+│           ├── assessment_repository.py    # CRUD operations for assessments
+│           └── user_repository.py          # User profile lookup and upsert logic
 ├── ml/                                     # Machine learning package
 │   ├── __init__.py                         # Marks ml as a Python package
 │   ├── data/                               # Dataset loading logic
@@ -136,14 +137,11 @@ medsight-api/                               # Backend and machine learning repos
 
 Authentication is performed on the mobile client through Supabase. The backend does not create sessions and does not issue tokens. FastAPI only verifies the JWT presented by the client.
 
-`api/lib/auth.py` uses `PyJWT` with:
+`api/lib/auth.py` uses `PyJWT` with ES256 asymmetric signing. `PyJWKClient` is initialised at module level and fetches the public key from the Supabase JWKS endpoint. `SUPABASE_JWT_SECRET` is no longer used.
 
-```python
-algorithms=["HS256"]
-audience="authenticated"
-```
+The module defines a `CurrentUser` Pydantic model containing `id`, `email`, and `role`. The `get_current_user` dependency extracts the Bearer token from the incoming request, decodes and verifies the JWT, then returns a populated `CurrentUser`. The `require_role(role)` dependency factory wraps `get_current_user` and raises `HTTP 403` when the authenticated user's role does not match the route requirement.
 
-The verification key is loaded from the `SUPABASE_JWT_SECRET` environment variable. The module defines a `CurrentUser` Pydantic model containing `id`, `email`, and `role`. The `get_current_user` dependency extracts the Bearer token from the incoming request, decodes and verifies the JWT, then returns a populated `CurrentUser`. The `require_role(role)` dependency factory wraps `get_current_user` and raises `HTTP 403` when the authenticated user's role does not match the route requirement.
+To bridge the gap between Supabase Auth identity and the product's own user records, the API implements an "upsert on first request" pattern. When a clinician submits an assessment or requests their profile via `GET /api/users/me`, the `UserRepository.get_or_create_from_auth_user` method is called. This ensures a product-level user record exists in the `users` table before any assessment persistence occurs.
 
 The backend expects the Supabase JWT payload structure to provide:
 
@@ -320,7 +318,7 @@ The application startup sequence follows this exact order:
 
 Authentication starts and ends with Supabase on the client side. The Expo application calls the Supabase SDK directly for registration, login, and Google OAuth. Supabase returns the JWT and session data. The Expo client stores the JWT in `SecureStore` and attaches it to every protected backend request in the `Authorization: Bearer <token>` header.
 
-On the backend, the `get_current_user` dependency verifies the JWT on every protected request. The user's role is extracted from the token payload, and route access is enforced through `require_role()`. The backend never issues tokens, never stores sessions, and never needs to contact Supabase for request-time authentication because verification is local using the shared signing secret.
+On the backend, the `get_current_user` dependency verifies the JWT on every protected request. The user's role is extracted from the token payload, and route access is enforced through `require_role()`. The backend never issues tokens, never stores sessions, and never needs to contact Supabase for request-time authentication because verification is local using the public key fetched from the JWKS endpoint.
 
 ```text
 Register / Login / Google OAuth
@@ -384,9 +382,8 @@ Every protected API request:
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `SUPABASE_JWT_SECRET` | Yes | Used by PyJWT to verify Supabase-issued tokens |
+| `SUPABASE_URL` | Yes | Base URL for Supabase API services (used for JWKS and Storage) |
 | `DATABASE_URL` | Yes | Connection string for the Supabase PostgreSQL database |
-| `SUPABASE_URL` | Yes | Base URL for Supabase API services (used for Storage) |
 | `SUPABASE_SECRET_KEY` | Yes | Service role key for privileged Supabase operations (used for Storage) |
 
 More variables will be added as Supabase database integration is implemented.

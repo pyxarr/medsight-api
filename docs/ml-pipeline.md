@@ -476,6 +476,8 @@ Interpretation:
 - second dimension: one value per feature
 - third dimension: class index, where `1` is the malignant class
 
+Important implementation detail: `check_additivity=False` is passed to the `shap_values()` call. This is required to suppress floating-point precision errors that occasionally occur with Random Forest models when aggregating contributions across many features. This is expected behaviour and does not affect the correctness of the SHAP attributions.
+
 ### 8.5 Returned Driver Format
 
 For each top driver, the explainer returns:

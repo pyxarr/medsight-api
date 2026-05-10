@@ -65,7 +65,7 @@ Based on the existing product and architecture documents, the backend is expecte
 
 ### 5.1 Users
 
-The database will need to store application-level user records beyond the basic identity data inside Supabase Auth.
+The database stores application-level user records in the `users` table, which holds product-level profile data separate from the identity data stored in Supabase Auth. A row is created automatically on the user's first authenticated request (e.g., during assessment submission or profile retrieval) via the `UserRepository.get_or_create_from_auth_user` upsert pattern.
 
 Likely responsibilities:
 
@@ -159,7 +159,7 @@ Suggested columns:
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | `uuid` | Internal assessment identifier |
+| `id` | `uuid` | Internal assessment identifier (server_default=gen_random_uuid()) |
 | `clinician_user_id` | `uuid` | Nullable for member self-assessments |
 | `member_user_id` | `uuid` | Nullable if not linked to a registered member profile |
 | `patient_id` | `text` | Domain identifier from the request payload |

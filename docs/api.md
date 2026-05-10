@@ -48,22 +48,15 @@ Authorization: Bearer <supabase_jwt>
 
 ### 3.3 Verification Rules
 
-JWT verification is handled in `api/lib/auth.py` using:
-
-```python
-jwt.decode(
-    token,
-    secret,
-    algorithms=["HS256"],
-    audience="authenticated",
-)
-```
+JWT verification is handled in `api/lib/auth.py`. Verification now uses ES256 asymmetric signing via the Supabase JWKS endpoint.
 
 Required environment variable:
 
 ```text
-SUPABASE_JWT_SECRET
+SUPABASE_URL
 ```
+
+The JWKS URL is `{SUPABASE_URL}/auth/v1/.well-known/jwks.json`. `PyJWKClient` fetches and caches the public key at module level.
 
 ### 3.4 Expected JWT Claims
 
@@ -96,6 +89,7 @@ require_role("clinician")
 | Method | Path | Auth | Role | Purpose |
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | No | None | Health check |
+| `GET` | `/api/users/me` | Yes | Any | Return/bootstrap product user profile |
 | `POST` | `/api/member/assess` | Yes | `member` | Simplified clinical assessment |
 | `POST` | `/api/clinician/manual-assess` | Yes | `clinician` | Manual diagnostic entry (Clinical + Blood) |
 | `GET` | `/api/clinician/assessments` | Yes | `clinician` | Paginated assessment history list |
@@ -119,6 +113,14 @@ Response:
   "message": "Breast Cancer DSS API is running."
 }
 ```
+
+### `GET /api/users/me`
+
+Required role: any authenticated user
+
+Purpose: returns the authenticated user's product profile; creates the profile record on first request using JWT claims if it does not exist in the `users` table.
+
+Response fields: `id`, `email`, `role`, `display_name`, `username`, `first_name`, `last_name`, `is_verified`, `created_at`
 
 ## 6. Shared Request Schemas
 
@@ -281,6 +283,22 @@ Important runtime rule:
   }
 }
 ```
+
+### 6.6 `UserProfileResponse`
+
+Response schema for user profile retrieval.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | `UUID` | Product user identifier |
+| `email` | `string` | Registered email address |
+| `role` | `string` | Application role (`member` or `clinician`) |
+| `display_name` | `string` | Formatted name for UI display |
+| `username` | `string` | Unique programmatic handle |
+| `first_name` | `string | null` | Given name |
+| `last_name` | `string | null` | Family name |
+| `is_verified` | `boolean` | Identity verification status |
+| `created_at` | `datetime` | Record creation timestamp |
 
 ## 7. Member Assessment Endpoint
 

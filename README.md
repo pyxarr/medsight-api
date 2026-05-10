@@ -40,15 +40,18 @@ http://127.0.0.1:8000
 ```text
 medsight-api/
 ├── api/                  # FastAPI app
-│   ├── routers/              # Nested role-based routers
-│   ├── schemas/              # Pydantic request schemas
+│   ├── routers/              # Nested role-based routers (including user.py)
+│   ├── schemas/              # Pydantic request schemas (including user.py)
 │   └── db/                   # Database access layer
+│       └── repositories/     # Data access logic (including user_repository.py)
 ├── ml/                   # ML pipeline code
 ├── data/raw/             # Raw CSV datasets
 ├── docs/                 # Project docs
 ├── train.py              # Training entry point
 ├── test_shap.py          # ML verification script
 ├── test_api.py           # API verification script
+├── tests/                # Integration test suite
+│   └── test_manual_assessments.py # member and clinician assessment flows
 ├── pyproject.toml        # Project metadata
 └── uv.lock               # Locked dependencies
 ```
@@ -111,13 +114,12 @@ source .venv/Scripts/activate
 3. Configure environment variables in a root `.env` file.
 
 ```env
-SUPABASE_JWT_SECRET=your_supabase_jwt_secret_here
+SUPABASE_URL=https://your-project-ref.supabase.co
 DATABASE_URL=your_postgresql_connection_string
-SUPABASE_URL=your_supabase_project_url
 SUPABASE_SECRET_KEY=your_supabase_service_role_key
 ```
 
-`SUPABASE_JWT_SECRET` is required because every protected endpoint verifies Supabase-issued JWTs locally.
+`SUPABASE_JWT_SECRET` is no longer used. Verification now relies on the Supabase public key endpoint.
 
 4. Train artefacts before starting the API.
 
@@ -189,6 +191,13 @@ Purpose:
 - retrieve a paginated list of past assessments
 - view detailed records of specific assessments
 - soft-delete obsolete assessment records
+
+### User Profile
+```http
+GET /api/users/me
+Authorization: Bearer <supabase_jwt>
+```
+Purpose: returns the authenticated user's profile, creating a product user record on first request if one does not exist.
 
 ## Authentication 🔐
 
@@ -279,21 +288,22 @@ This script exercises:
 - out-of-distribution detection
 
 ### API verification
-
 Start the API first, then run:
 
 ```bash
-.venv/Scripts/python test_api.py
+.venv/Scripts/python tests/test_api.py
 ```
 
 `test_api.py` exercises the current `/api/member/assess`, `/api/clinician/manual-assess`, and `/api/clinician/batch-assess` routes across five scenarios and requires a valid JWT.
+
+Additionally, `tests/test_manual_assessments.py` provides a comprehensive integration test suite for member and clinician manual assessment flows.
 
 ## Current State 📍
 
 Implemented now:
 
 - FastAPI application startup through lifespan
-- JWT verification against Supabase secret
+- JWT verification using ES256 JWKS-based verification via Supabase's public key endpoint
 - role-based access control for member and clinician routes
 - multi-model inference pipeline
 - persisted model loading from disk
