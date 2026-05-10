@@ -46,7 +46,7 @@ def upgrade() -> None:
     sa.UniqueConstraint('username')
     )
     op.create_table('assessments',
-    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('id', sa.UUID(), nullable=False, server_default=sa.text('gen_random_uuid()')),
     sa.Column('clinician_user_id', sa.UUID(), nullable=True),
     sa.Column('member_user_id', sa.UUID(), nullable=True),
     sa.Column('patient_id', sa.String(), nullable=False),
