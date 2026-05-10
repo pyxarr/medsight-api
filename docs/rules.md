@@ -503,20 +503,27 @@ chore/description
 
 ## 10. Testing Rules
 
-- Test files live at the project root.
+- Test files live in the `tests/` directory at the project root.
 - Current test files are:
 
 ```text
-test_shap.py
-test_api.py
+tests/test_manual_assessments.py
+tests/test_shap.py
+tests/test_api.py
 ```
 
 - Run both test files after any change to machine learning files.
 - Run both test files after any change to API files.
 - Never use multi-line `python -c "..."` commands on Windows Git Bash.
 - Use test script files instead.
-- The API must be running before `test_api.py` is executed.
+- The API must be running before `tests/test_api.py` is executed.
 - All five API scenarios must pass:
+
+```bash
+.venv/Scripts/python tests/test_manual_assessments.py
+.venv/Scripts/python tests/test_shap.py
+.venv/Scripts/python tests/test_api.py
+```
 
 ```text
 member low risk
