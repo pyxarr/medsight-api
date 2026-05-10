@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.db.repositories.assessment_repository import create_clinician_assessment
 from api.db.repositories.batch_repository import BatchRepository
 from api.db.repositories.patient_repository import PatientRepository
+from api.db.repositories.user_repository import UserRepository
 from api.db.session import get_db
 from api.lib.auth import CurrentUser, require_role
 from api.lib.storage import build_batch_storage_path, upload_batch_csv
@@ -191,6 +192,12 @@ async def _run_clinician_assessment_pipeline(
         patient_external_id=body.patient_id,
     )
 
+    user_repository = UserRepository()
+    await user_repository.get_or_create_from_auth_user(
+        database_session=database_session,
+        current_user=current_user,
+    )
+
     try:
         await create_clinician_assessment(
             database_session=database_session,
@@ -216,11 +223,12 @@ async def _run_clinician_assessment_pipeline(
             ood_warning=response_payload["ood_warning"],
             batch_id=batch_id,
         )
-    except Exception:
+    except Exception as e:
         LOGGER.exception(
-            "Failed to persist clinician assessment for patient_id=%s clinician_user_id=%s",
+            "Failed to persist clinician assessment for patient_id=%s clinician_user_id=%s. Error: %s",
             body.patient_id,
             current_user.id,
+            str(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
