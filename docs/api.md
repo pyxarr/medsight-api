@@ -92,6 +92,7 @@ require_role("clinician")
 | `GET` | `/api/users/me` | Yes | Any | Return/bootstrap product user profile |
 | `POST` | `/api/member/assess` | Yes | `member` | Simplified clinical assessment |
 | `POST` | `/api/clinician/manual-assess` | Yes | `clinician` | Manual diagnostic entry (Clinical + Blood) |
+| `POST` | `/api/clinician/batch-assess` | Yes | `clinician` | Batch CSV upload for assessments |
 | `GET` | `/api/clinician/assessments` | Yes | `clinician` | Paginated assessment history list |
 | `GET` | `/api/clinician/assessments/{id}` | Yes | `clinician` | Full assessment detail record |
 | `DELETE` | `/api/clinician/assessments/{id}` | Yes | `clinician` | Soft delete assessment record |
@@ -471,6 +472,65 @@ Flagged feature detail includes:
 - number of standard deviations from the UCTH training mean
 - severity label
 
+## 8.7 Batch Assessment Endpoint
+
+### `POST /api/clinician/batch-assess`
+
+Required role:
+```text
+clinician
+```
+
+#### 8.7.1 Purpose
+Allows clinicians to upload a CSV file containing multiple patient records. The API processes each row independently; successful rows are persisted as assessments, while failed rows are reported in the response without aborting the entire batch.
+
+#### 8.7.2 Request Format
+The endpoint expects a `multipart/form-data` request with a single file field named `file`. The CSV must contain the following mandatory columns:
+- `patient_name`
+- `cli_age`
+- `cli_menopause`
+- `cli_tumor_size_cm`
+- `cli_invasive_nodes`
+- `cli_breast_side`
+- `cli_metastasis`
+- `cli_breast_quadrant`
+- `cli_breast_disease_history`
+
+Optional columns starting with `bio_` or `blood_` are accepted and processed according to the standard clinician assessment logic.
+
+#### 8.7.3 Response Shape
+```json
+{
+  "batch_id": "UUID",
+  "summary": {
+    "total": 10,
+    "success": 8,
+    "failed": 2
+  },
+  "results": [
+    {
+      "row_index": 1,
+      "patient_id": "P-101",
+      "patient_name": "Jane Doe",
+      "status": "success",
+      "result": { ... detailed assessment payload ... }
+    },
+    {
+      "row_index": 2,
+      "patient_id": "P-102",
+      "patient_name": "Invalid User",
+      "status": "failed",
+      "error": "Missing mandatory clinical field: cli_age"
+    }
+  ]
+}
+```
+
+#### 8.7.4 Error Behaviour
+- **Empty CSV**: Returns `HTTP 400` if the CSV contains only headers and no data rows.
+- **Invalid File Type**: Returns `HTTP 400` if the uploaded file is not a `.csv`.
+- **Missing Columns**: Returns `HTTP 400` if any mandatory clinical columns are missing.
+
 ## 9. Runtime Components Used by the Routes
 
 Loaded on startup in `api/main.py`:
@@ -521,7 +581,6 @@ If required artefacts are missing from `ml/saved_models/`, application startup f
 
 The current API surface only covers prediction. The repository structure and documentation anticipate future routes for:
 
-- batch CSV upload
 - community features
 - notifications
 - profile management

@@ -510,6 +510,7 @@ chore/description
 tests/test_manual_assessments.py
 tests/test_shap.py
 tests/test_api.py
+tests/test_batch_assessments.py
 ```
 
 - Run both test files after any change to machine learning files.
@@ -523,6 +524,7 @@ tests/test_api.py
 .venv/Scripts/python tests/test_manual_assessments.py
 .venv/Scripts/python tests/test_shap.py
 .venv/Scripts/python tests/test_api.py
+.venv/Scripts/python tests/test_batch_assessments.py
 ```
 
 ```text
