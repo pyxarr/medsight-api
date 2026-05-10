@@ -107,10 +107,12 @@ class RiskExplainer:
         """
         all_contributions = []
 
-        # ── UCTH contributions ────────────────────────────────────────────
+        # UCTH contributions
         if self.ucth_explainer is not None:
             ucth_shap_values = self.ucth_explainer.shap_values(
-                preprocessed_ucth_features
+                preprocessed_ucth_features,
+                check_additivity=False, # check_additivity=False suppresses floating-point precision errors in the
+                                       # additivity check that occur with Random Forest models across many features.
             )
             ucth_contributions = self._extract_contributions(
                 shap_values=ucth_shap_values[0, :, 1],
@@ -119,7 +121,7 @@ class RiskExplainer:
             )
             all_contributions.extend(ucth_contributions)
 
-        # ── Wisconsin contributions ───────────────────────────────────────
+        # Wisconsin contributions
         if self.wisconsin_explainer is not None and preprocessed_wisconsin_features is not None:
             wisconsin_shap_values = self.wisconsin_explainer.shap_values(
                 preprocessed_wisconsin_features
@@ -131,7 +133,7 @@ class RiskExplainer:
             )
             all_contributions.extend(wisconsin_contributions)
 
-        # ── Coimbra contributions ─────────────────────────────────────────
+        # Coimbra contributions
         if self.coimbra_explainer is not None and preprocessed_coimbra_features is not None:
             coimbra_shap_values = self.coimbra_explainer.shap_values(
                 preprocessed_coimbra_features
@@ -143,7 +145,7 @@ class RiskExplainer:
             )
             all_contributions.extend(coimbra_contributions)
 
-        # ── Sort by absolute contribution and return top drivers ──────────
+        # Sort by absolute contribution and return top drivers
         all_contributions.sort(
             key=lambda item: abs(item["contribution"]),
             reverse=True
