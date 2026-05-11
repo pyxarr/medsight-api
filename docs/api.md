@@ -92,7 +92,7 @@ require_role("clinician")
 | `GET` | `/api/users/me` | Yes | Any | Return/bootstrap product user profile |
 | `POST` | `/api/member/assess` | Yes | `member` | Simplified clinical assessment |
 | `POST` | `/api/clinician/manual-assess` | Yes | `clinician` | Manual diagnostic entry (Clinical + Blood) |
-| `POST` | `/api/clinician/batch-assess` | Yes | `clinician` | Batch CSV upload for assessments |
+| `POST` | `/api/clinician/batch-assess` | Yes | `clinician` | Batch CSV or XLSX upload for assessments |
 | `GET` | `/api/clinician/assessments` | Yes | `clinician` | Paginated assessment history list |
 | `GET` | `/api/clinician/assessments/{id}` | Yes | `clinician` | Full assessment detail record |
 | `DELETE` | `/api/clinician/assessments/{id}` | Yes | `clinician` | Soft delete assessment record |
@@ -484,10 +484,10 @@ clinician
 ```
 
 #### 8.7.1 Purpose
-Allows clinicians to upload a CSV file containing multiple patient records. The API processes each row independently; successful rows are persisted as assessments, while failed rows are reported in the response without aborting the entire batch.
+Allows clinicians to upload a CSV or XLSX file containing multiple patient records. The API processes each row independently; successful rows are persisted as assessments, while failed rows are reported in the response without aborting the entire batch.
 
 #### 8.7.2 Request Format
-The endpoint expects a `multipart/form-data` request with a single file field named `file`. The CSV must contain the following mandatory columns:
+The endpoint expects a `multipart/form-data` request with a single file field named `file`. The uploaded file (.csv or .xlsx) must contain the following mandatory columns:
 - `patient_name`
 - `cli_age`
 - `cli_menopause`
@@ -534,8 +534,8 @@ Optional columns starting with `bio_` or `blood_` are accepted and processed acc
 ```
 
 #### 8.7.4 Error Behaviour
-- **Empty CSV**: Returns `HTTP 400` if the CSV contains only headers and no data rows.
-- **Invalid File Type**: Returns `HTTP 400` if the uploaded file is not a `.csv`.
+- **Empty File**: Returns `HTTP 400` if the file contains only headers and no data rows.
+- **Invalid File Type**: Returns `HTTP 400` if the uploaded file is not a `.csv` or `.xlsx`.
 - **Missing Columns**: Returns `HTTP 400` if any mandatory clinical columns are missing.
 - **Unknown Patient ID**: If a `patient_id` value is provided but does not match any existing patient record, that row is marked as failed with the message `"Patient {id} not found. Register the patient before submitting a batch assessment."` The rest of the batch continues processing normally.
 

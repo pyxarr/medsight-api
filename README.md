@@ -176,7 +176,7 @@ Authorization: Bearer <supabase_jwt>
 ```
 Purpose:
 - Manual: accepts clinical data and optional biopsy/blood data for single patient entry
-- Batch: accepts CSV upload for bulk processing and session tracking
+- Batch: accepts CSV or XLSX upload for bulk processing and session tracking
 - returns detailed ensemble output, SHAP drivers, and out-of-distribution warnings
 
 

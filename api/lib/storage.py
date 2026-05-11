@@ -9,14 +9,14 @@ SUPABASE_BATCH_BUCKET = "assessment-batches"
 
 
 def build_batch_storage_path(clinician_user_id: str, original_filename: str) -> str:
-    """Return a unique Supabase Storage path for one uploaded batch CSV."""
+    """Return a unique Supabase Storage path for one uploaded batch file."""
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     safe_filename = original_filename.replace(" ", "_")
     return f"clinicians/{clinician_user_id}/{timestamp}-{uuid4()}-{safe_filename}"
 
 
-def upload_batch_csv(file_bytes: bytes, storage_path: str) -> str:
-    """Upload one batch CSV to Supabase Storage and return the stored path."""
+def upload_batch_file(file_bytes: bytes, storage_path: str, content_type: str = "text/csv") -> str:
+    """Upload one batch file to Supabase Storage and return the stored path."""
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_secret_key = os.getenv("SUPABASE_SECRET_KEY")
 
@@ -29,7 +29,7 @@ def upload_batch_csv(file_bytes: bytes, storage_path: str) -> str:
         headers={
             "apikey": supabase_secret_key,
             "Authorization": f"Bearer {supabase_secret_key}",
-            "Content-Type": "text/csv",
+            "Content-Type": content_type,
             "x-upsert": "true",
         },
         data=file_bytes,
@@ -37,6 +37,6 @@ def upload_batch_csv(file_bytes: bytes, storage_path: str) -> str:
     )
 
     if response.status_code >= 400:
-        raise RuntimeError("Batch CSV could not be uploaded to Supabase Storage.")
+        raise RuntimeError(f"Batch file could not be uploaded to Supabase Storage. Status: {response.status_code}")
 
     return storage_path

@@ -113,3 +113,19 @@ async def parse_batch_csv(file: UploadFile) -> tuple[pd.DataFrame, bytes]:
         raise ValueError("The uploaded file could not be parsed as CSV.") from exc
 
     return batch_dataframe, file_bytes
+
+
+async def parse_batch_xlsx(file: UploadFile) -> tuple[pd.DataFrame, bytes]:
+    """Read one uploaded XLSX file and return both the DataFrame and raw bytes."""
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise ValueError("The uploaded XLSX file is empty.")
+
+    try:
+        batch_dataframe = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+    except Exception as exc:
+        raise ValueError(
+            "Could not read the uploaded Excel file. Ensure the file is a valid, unprotected .xlsx workbook."
+        ) from exc
+
+    return batch_dataframe, file_bytes

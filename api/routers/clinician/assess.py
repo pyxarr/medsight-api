@@ -1,3 +1,4 @@
+import io
 import logging
 from typing import Any
 from uuid import UUID as PythonUUID
@@ -12,9 +13,10 @@ from api.db.repositories.patient_repository import PatientRepository
 from api.db.repositories.user_repository import UserRepository
 from api.db.session import get_db
 from api.lib.auth import CurrentUser, require_role
-from api.lib.storage import build_batch_storage_path, upload_batch_csv
+from api.lib.storage import build_batch_storage_path, upload_batch_file
 from api.routers.clinician.inference_service import (
     parse_batch_csv,
+    parse_batch_xlsx,
     prepare_assessment_dataframes,
     run_inference_and_explain,
     build_assessment_response_payload,
@@ -289,28 +291,40 @@ async def clinician_batch_assess(
     current_user: CurrentUser = Depends(require_role("clinician")),
     database_session: AsyncSession = Depends(get_db),
 ) -> BatchAssessmentResponse:
-    """Process a clinician batch CSV and persist successful assessments."""
-    if file.filename is None or not file.filename.lower().endswith(".csv"):
+    """Process a clinician batch CSV or XLSX and persist successful assessments."""
+    filename = file.filename.lower() if file.filename else ""
+    if not (filename.endswith(".csv") or filename.endswith(".xlsx")):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Batch upload requires a CSV file.",
+            detail="Batch upload requires a .csv or .xlsx file.",
         )
 
     try:
-        batch_dataframe, file_bytes = await parse_batch_csv(file)
+        if filename.endswith(".xlsx"):
+            # Excel files are read natively rather than converted to CSV first.
+            # Conversion would silently drop data types and formatting that pandas
+            # preserves correctly when reading directly from the source format.
+            batch_dataframe, file_bytes = await parse_batch_xlsx(file)
+        else:
+            # CSV path (existing — do not change)
+            batch_dataframe, file_bytes = await parse_batch_csv(file)
+
         _ensure_required_batch_columns(batch_dataframe)
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     if len(batch_dataframe) == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="CSV file contains no data rows.",
+            detail="Uploaded file contains no data rows.",
         )
 
     storage_path = build_batch_storage_path(str(current_user.id), file.filename)
+    content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if filename.endswith(".xlsx") else "text/csv"
     try:
-        stored_file_path = upload_batch_csv(file_bytes=file_bytes, storage_path=storage_path)
+        stored_file_path = upload_batch_file(file_bytes=file_bytes, storage_path=storage_path, content_type=content_type)
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

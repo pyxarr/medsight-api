@@ -8,6 +8,7 @@ from typing import Dict, Any, List
 
 import requests
 import jwt
+import openpyxl
 from dotenv import load_dotenv
 
 # Load environment variables from root and frontend
@@ -62,16 +63,21 @@ class SupabaseAuth:
         self.token = resp.json().get("access_token")
         return self.token
 
-def run_batch_test(name: str, endpoint: str, token: str, csv_content: str, filename: str, expected_status: int = 200):
+def run_batch_test(name: str, endpoint: str, token: str, content: Any, filename: str, expected_status: int = 200):
     """Execute a single batch upload API request and return the result."""
     print(f"\n--- Testing: {name} ---")
     url = f"{BASE_URL}/{endpoint}"
     headers = {"Authorization": f"Bearer {token}"}
     
     # Create multipart file upload
-    files = {
-        "file": (filename, io.BytesIO(csv_content.encode("utf-8")), "text/csv")
-    }
+    if filename.endswith(".xlsx"):
+        files = {
+            "file": (filename, io.BytesIO(content), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        }
+    else:
+        files = {
+            "file": (filename, io.BytesIO(content.encode("utf-8")), "text/csv")
+        }
     
     try:
         response = requests.post(url, headers=headers, files=files, timeout=30)
@@ -129,6 +135,43 @@ def generate_csv(rows: List[Dict[str, Any]], include_patient_id: bool = True):
     writer.writerows(rows)
     return output.getvalue()
 
+def generate_xlsx(rows: List[Dict[str, Any]], include_patient_id: bool = True) -> bytes:
+    """Generate XLSX bytes based on provided row data."""
+    if not rows:
+        return b""
+    
+    # Define all possible columns for the header
+    headers = [
+        "patient_name", "patient_id", "cli_age", "cli_menopause", 
+        "cli_tumor_size_cm", "cli_invasive_nodes", "cli_breast_side", 
+        "cli_metastasis", "cli_breast_quadrant", "cli_breast_disease_history"
+    ]
+    
+    # Collect any optional columns present in any of the rows
+    all_cols = set(headers)
+    for row in rows:
+        for k in row.keys():
+            if k.startswith("bio_") or k.startswith("blood_"):
+                all_cols.add(k)
+    
+    sorted_headers = sorted(list(all_cols))
+    if not include_patient_id:
+        sorted_headers = [h for h in sorted_headers if h != "patient_id"]
+        
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(sorted_headers)
+    
+    for row in rows:
+        row_data = []
+        for col in sorted_headers:
+            row_data.append(row.get(col, ""))
+        ws.append(row_data)
+        
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
 async def main():
     """Authenticate test users, warm up the API, and run all batch assessment scenarios."""
     # 1. Setup Identities
@@ -182,7 +225,7 @@ async def main():
     }
 
     scenarios_passed = 0
-    total_scenarios = 19
+    total_scenarios = 21
 
 
     # Scenario 1: Clinical only, single row, no patient_id
@@ -308,71 +351,89 @@ async def main():
     )
     if res is None: scenarios_passed += 1
 
-    # Scenario 13: Member token rejected
+    # Scenario 13: Excel file upload
+    xlsx_content = generate_xlsx([{"patient_name": "Excel Test", **valid_clinical}], include_patient_id=False)
     res = run_batch_test(
-        "Scenario 13: Member token rejected",
+        "Scenario 13: Excel file upload",
+        "clinician/batch-assess", c_token,
+        xlsx_content, "scenario13.xlsx", 200
+    )
+    if res and res["results"][0]["status"] == "success": scenarios_passed += 1
+
+    # Scenario 14: Corrupted Excel file
+    res = run_batch_test(
+        "Scenario 14: Corrupted Excel file",
+        "clinician/batch-assess", c_token,
+        b"not an excel file", "scenario14.xlsx", 400
+    )
+    if res is None: scenarios_passed += 1
+
+    # Scenario 15: Member token rejected
+    res = run_batch_test(
+        "Scenario 15: Member token rejected",
         "clinician/batch-assess", m_token,
         generate_csv([{"patient_name": "Member", **valid_clinical}]),
-        "scenario13.csv", 403
+        "scenario15.csv", 403
     )
     if res is None: scenarios_passed += 1
 
-    # Scenario 14: No auth token
+    # Scenario 16: No auth token
     res = run_batch_test(
-        "Scenario 14: No auth token",
+        "Scenario 16: No auth token",
         "clinician/batch-assess", "",
         generate_csv([{"patient_name": "No Auth", **valid_clinical}]),
-        "scenario14.csv", 401
+        "scenario16.csv", 401
     )
     if res is None: scenarios_passed += 1
 
-    # Scenario 15: Unknown patient ID
+    # Scenario 17: Unknown patient ID
     # Verify that providing an ID that doesn't exist in the DB is rejected rather than creating a ghost patient.
     res = run_batch_test(
-        "Scenario 15: Unknown patient ID",
+        "Scenario 17: Unknown patient ID",
         "clinician/batch-assess", c_token,
         generate_csv([{"patient_name": "Ghost Patient", "patient_id": "P-GHOST-999", **valid_clinical}]),
-        "scenario15.csv", 200
+        "scenario17.csv", 200
     )
 
     if res and res["results"][0]["status"] == "failed" and "not found" in res["results"][0]["error"].lower():
         scenarios_passed += 1
 
-    # Scenario 16: Known patient ID reuse
+    # Scenario 18: Known patient ID reuse
     # Verify the two-step flow: auto-create a patient, capture the ID, then reuse it in a subsequent row.
     # First create a patient
     res_create = run_batch_test(
-        "Scenario 16a: Create patient for reuse",
+        "Scenario 18a: Create patient for reuse",
         "clinician/batch-assess", c_token,
         generate_csv([{"patient_name": "Reuse Patient", **valid_clinical}], include_patient_id=False),
-        "scenario16a.csv", 200
+        "scenario18a.csv", 200
     )
 
     if res_create:
         captured_id = res_create["results"][0]["patient_id"]
         # Now reuse that ID
         res_reuse = run_batch_test(
-            "Scenario 16b: Reuse patient ID",
+            "Scenario 18b: Reuse patient ID",
             "clinician/batch-assess", c_token,
             generate_csv([{"patient_name": "Reuse Patient", "patient_id": captured_id, **valid_clinical}]),
-            "scenario16b.csv", 200
+            "scenario18b.csv", 200
         )
         if res_reuse and res_reuse["results"][0]["status"] == "success" and res_reuse["results"][0]["patient_id"] == captured_id:
             scenarios_passed += 1
     else:
-        print("Scenario 16 failed at creation step")
+        print("Scenario 18 failed at creation step")
 
-    # Scenario 17: Patient ID column present but blank
+    # Scenario 19: Blank patient ID column
     res = run_batch_test(
-        "Scenario 17: Blank patient ID column",
+        "Scenario 19: Blank patient ID column",
         "clinician/batch-assess", c_token,
         generate_csv([{"patient_name": "Blank ID", "patient_id": "", **valid_clinical}]),
-        "scenario17.csv", 200
+        "scenario19.csv", 200
     )
     if res and res["results"][0]["status"] == "success" and res["results"][0]["patient_id"]:
         scenarios_passed += 1
 
-    # Scenario 18: Mixed batch with one unknown patient ID
+    # Scenario 20: Mixed batch with one unknown patient ID
+    # Mixed rows
     mixed_unknown = [
         {"patient_name": "Success 1", **valid_clinical},
         {"patient_name": "Success 2", **valid_clinical},
@@ -380,17 +441,17 @@ async def main():
         {"patient_name": "Ghost", "patient_id": "P-GHOST-000", **valid_clinical},
     ]
     res = run_batch_test(
-        "Scenario 18: Mixed batch (1 unknown ID)",
+        "Scenario 20: Mixed batch (1 unknown ID)",
         "clinician/batch-assess", c_token,
         generate_csv(mixed_unknown), # Note: generate_csv adds the col if a row has it
-        "scenario18.csv", 200
+        "scenario20.csv", 200
     )
     # Since include_patient_id=False is used, we must ensure generate_csv handles the mix
     # The existing generate_csv implementation uses a set of all keys in rows, so it will include patient_id
     if res and res["summary"]["success"] == 3 and res["summary"]["failed"] == 1 and "not found" in res["results"][3]["error"].lower():
         scenarios_passed += 1
 
-    # Scenario 19: Real CSV file from disk
+    # Scenario 21: Real CSV file from disk
     # Verifies actual file system handling and Supabase Storage integration beyond in-memory buffers.
     try:
         url = f"{BASE_URL}/clinician/batch-assess"
@@ -400,28 +461,29 @@ async def main():
             files = {"file": ("batch_sample.csv", f, "text/csv")}
             response = requests.post(url, headers=headers, files=files, timeout=30)
         
-            if response.status_code == 200:
-                data = response.json()
-                batch_id = data.get("batch_id")
-                summary = data.get("summary", {})
-                results = data.get("results", [])
-                
-                if (
-                    batch_id and 
-                    summary.get("total") == 5 and 
-                    summary.get("success") == 5 and 
-                    summary.get("failed") == 0 and 
-                    all(r.get("status") == "success" for r in results)
-                ):
-                    scenarios_passed += 1
-                    print(f"SUCCESS: Real CSV file uploaded and processed. Batch ID: {batch_id}")
-                else:
-                    print(f"FAILED: Response validation failed. Summary: {summary}")
+        if response.status_code == 200:
+            data = response.json()
+            batch_id = data.get("batch_id")
+            summary = data.get("summary", {})
+            results = data.get("results", [])
+            
+            if (
+                batch_id and 
+                summary.get("total") == 5 and 
+                summary.get("success") == 5 and 
+                summary.get("failed") == 0 and 
+                all(r.get("status") == "success" for r in results)
+            ):
+                scenarios_passed += 1
+                print(f"SUCCESS: Real CSV file uploaded and processed. Batch ID: {batch_id}")
             else:
-                print(f"FAILED: Real CSV upload returned {response.status_code}")
-                print(f"Response: {response.text}")
+                print(f"FAILED: Response validation failed. Summary: {summary}")
+        else:
+            print(f"FAILED: Real CSV upload returned {response.status_code}")
+            print(f"Response: {response.text}")
     except Exception as e:
         print(f"ERROR during real file test: {e}")
+
 
 
     print(f"\n\n{'='*30}\nBATCH TEST SUMMARY\n{'='*30}")
