@@ -495,6 +495,9 @@ The endpoint expects a `multipart/form-data` request with a single file field na
 - `cli_metastasis`
 - `cli_breast_quadrant`
 - `cli_breast_disease_history`
+- `patient_id` (optional)
+  - if provided, it must match an existing patient record in the database — rows with an unrecognised `patient_id` are failed, not created
+  - if omitted, a new patient record is created automatically using the `patient_name` column
 
 Optional columns starting with `bio_` or `blood_` are accepted and processed according to the standard clinician assessment logic.
 
@@ -530,6 +533,7 @@ Optional columns starting with `bio_` or `blood_` are accepted and processed acc
 - **Empty CSV**: Returns `HTTP 400` if the CSV contains only headers and no data rows.
 - **Invalid File Type**: Returns `HTTP 400` if the uploaded file is not a `.csv`.
 - **Missing Columns**: Returns `HTTP 400` if any mandatory clinical columns are missing.
+- **Unknown Patient ID**: If a `patient_id` value is provided but does not match any existing patient record, that row is marked as failed with the message `"Patient {id} not found. Register the patient before submitting a batch assessment."` The rest of the batch continues processing normally.
 
 ## 9. Runtime Components Used by the Routes
 

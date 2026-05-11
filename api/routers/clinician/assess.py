@@ -336,16 +336,25 @@ async def clinician_batch_assess(
                 fallback_patient_id = str(raw_patient_external_id or "")
 
                 first_name, last_name = _split_patient_name(patient_name)
-                # Upsert the patient so repeat submissions for the same external ID
-                # do not create duplicate patient records.
-                patient_record = await patient_repository.get_or_create_by_external_id(
-                    database_session=database_session,
-                    first_name=first_name,
-                    last_name=last_name,
-                    patient_external_id=(
-                        str(raw_patient_external_id) if raw_patient_external_id is not None else None
-                    ),
-                )
+                if raw_patient_external_id is not None:
+                    # Look up existing patients to prevent creating ghost records for invalid IDs.
+                    patient_record = await patient_repository.get_by_external_id(
+                        database_session=database_session,
+                        patient_external_id=str(raw_patient_external_id),
+                    )
+                    # Reject the row if the ID is provided but not found, ensuring data integrity.
+                    if patient_record is None:
+                        raise ValueError(
+                            f"Patient {raw_patient_external_id} not found. "
+                            "Register the patient before submitting a batch assessment."
+                        )
+                else:
+                    # Fall through to creation when no ID is provided to allow new patient registration.
+                    patient_record = await patient_repository.create_patient(
+                        database_session=database_session,
+                        first_name=first_name,
+                        last_name=last_name,
+                    )
                 request_body = _build_batch_request(
                     row_payload=row_payload,
                     batch_dataframe=batch_dataframe,
