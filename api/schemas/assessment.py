@@ -1,5 +1,6 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, field_validator
+from typing import Optional, Any
+from pydantic import ValidationInfo
 
 class ClinicalData(BaseModel):
     """
@@ -7,13 +8,52 @@ class ClinicalData(BaseModel):
     Every member and clinician must provide these.
     """
     age:                    float
-    menopause:              int    # 0 = premenopausal, 1 = postmenopausal
+    menopause:              int | str    # 0='premenopausal', 1='postmenopausal'
     tumor_size_cm:          float
     invasive_nodes:         float
-    breast_side:            int    # 0 = left, 1 = right
-    metastasis:             int    # 0 = no, 1 = yes
-    breast_quadrant:        int    # 0=upper outer, 1=upper inner, 2=lower outer, 3=lower inner
-    breast_disease_history: int    # 0 = no, 1 = yes
+    breast_side:            int | str    # 0='left', 1='right'
+    metastasis:             int | str    # 0='no', 1='yes'
+    breast_quadrant:        int | str    # 0='upper outer', 1='upper inner', 2='lower outer', 3='lower inner'
+    breast_disease_history: int | str    # 0='no', 1='yes'
+
+    # Use mode="before" to intercept the input before Pydantic's type coercion attempt.
+    # This allows us to handle strings and convert them to integers before the model is instantiated.
+    @field_validator("menopause", "breast_side", "metastasis", "breast_quadrant", "breast_disease_history", mode="before")
+    @classmethod
+    def validate_categorical_clinical_field(cls, v: Any, info: ValidationInfo) -> int:
+        if isinstance(v, int):
+            return v
+        
+        if isinstance(v, str):
+            stripped_v = v.strip().lower()
+            if not stripped_v:
+                raise ValueError(f"Field {info.field_name} cannot be empty.")
+            
+            # Handle string-encoded integers (e.g. "1") first to avoid unnecessary mapping lookups.
+            try:
+                return int(stripped_v)
+            except ValueError:
+                pass
+            
+            # Single validator handles all categorical fields to reduce logic duplication.
+            mappings = {
+                "menopause": {"premenopausal": 0, "postmenopausal": 1},
+                "breast_side": {"left": 0, "right": 1},
+                "metastasis": {"no": 0, "yes": 1},
+                "breast_quadrant": {
+                    "upper outer": 0, "upper inner": 1, "lower outer": 2, "lower inner": 3
+                },
+                "breast_disease_history": {"no": 0, "yes": 1},
+            }
+            
+            field_map = mappings.get(info.field_name, {})
+            if stripped_v in field_map:
+                return field_map[stripped_v]
+            
+            accepted = ", ".join([f"'{k}'" for k in field_map.keys()])
+            raise ValueError(f"Invalid value {v} for {info.field_name}. Accepted values: {accepted}")
+
+        raise ValueError(f"Invalid type for {info.field_name}. Expected int or str.")
 
 
 class BiopsyData(BaseModel):

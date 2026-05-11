@@ -39,7 +39,7 @@ The broader project requirement is data sovereignty. Medical and user data must 
 
 ## 4. What the Backend Knows About Users Today
 
-The backend reconstructs a minimal authenticated user object from the JWT in `api/lib/auth.py` and persists a corresponding product-level record in the `users` table via an "upsert on first request" pattern.
+The backend reconstructs a minimal authenticated user object from the JWT in `api/lib/auth.py` and persists a corresponding product-level record in the `users` table via an "upsert on first request" pattern, triggered during profile retrieval or clinician assessment submissions (manual or batch).
 
 ## 5. Persistence Domains Planned for the Product
 
@@ -47,7 +47,7 @@ Based on the existing product and architecture documents, the backend is expecte
 
 ### 5.1 Users
 
-The database stores application-level user records in the `users` table, which holds product-level profile data separate from the identity data stored in Supabase Auth. A row is created automatically on the user's first authenticated request (e.g., during assessment submission or profile retrieval) via the `UserRepository.get_or_create_from_auth_user` upsert pattern.
+The database stores application-level user records in the `users` table, which holds product-level profile data separate from the identity data stored in Supabase Auth. A row is created automatically on the user's first authenticated request (e.g., during manual or batch assessment submission or profile retrieval) via the `UserRepository.get_or_create_from_auth_user` upsert pattern.
 
 Likely responsibilities:
 

@@ -263,6 +263,15 @@ async def clinician_manual_assess(
         blood_panel=body.blood_panel,
     )
 
+    # Ensure the clinician exists in the users table before calling the assessment pipeline 
+    # to prevent foreign key violations. This must happen before the pipeline starts. 
+    # The subsequent upsert inside _run_clinician_assessment_pipeline will then be a no-op.
+    user_repository = UserRepository()
+    await user_repository.get_or_create_from_auth_user(
+        database_session=database_session,
+        current_user=current_user,
+    )
+
     return await _run_clinician_assessment_pipeline(
         request=request,
         body=request_body,
@@ -310,6 +319,17 @@ async def clinician_batch_assess(
 
     batch_repository = BatchRepository()
     patient_repository = PatientRepository()
+
+    # Ensure the clinician exists in the users table before creating a batch record to prevent 
+    # foreign key violations. This must happen before create_batch and not inside the row 
+    # loop to avoid redundant checks. The subsequent upsert inside 
+    # _run_clinician_assessment_pipeline will then be a no-op.
+    user_repository = UserRepository()
+    await user_repository.get_or_create_from_auth_user(
+        database_session=database_session,
+        current_user=current_user,
+    )
+
     batch_record = await batch_repository.create_batch(
         database_session=database_session,
         clinician_user_id=current_user.id,

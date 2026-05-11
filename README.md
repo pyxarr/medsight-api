@@ -244,11 +244,9 @@ The backend also loads:
 Defined in `api/schemas/assessment.py`.
 
 ### `ClinicalData`
-
-Always required.
+Always required. Categorical fields accept both integers and human-readable strings.
 
 Fields:
-
 - `age`
 - `menopause`
 - `tumor_size_cm`

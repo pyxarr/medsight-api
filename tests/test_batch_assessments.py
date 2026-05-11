@@ -155,11 +155,13 @@ async def main():
         pass
 
     # --- CSV Data Templates ---
+    # Use human-readable strings to exercise the string-to-int validator in ClinicalData
     valid_clinical = {
-        "cli_age": 45, "cli_menopause": 1, "cli_tumor_size_cm": 2.5,
-        "cli_invasive_nodes": 1, "cli_breast_side": 0, "cli_metastasis": 0,
-        "cli_breast_quadrant": 1, "cli_breast_disease_history": 0
+        "cli_age": 45, "cli_menopause": "postmenopausal", "cli_tumor_size_cm": 2.5,
+        "cli_invasive_nodes": 1, "cli_breast_side": "left", "cli_metastasis": "no",
+        "cli_breast_quadrant": "upper inner", "cli_breast_disease_history": "no"
     }
+
     valid_blood = {
         "blood_body_mass_index": 24.5, "blood_glucose": 90.0, "blood_insulin": 7.2,
         "blood_homeostasis_model_assessment": 2.0, "blood_leptin": 15.1,
@@ -180,7 +182,8 @@ async def main():
     }
 
     scenarios_passed = 0
-    total_scenarios = 14
+    total_scenarios = 19
+
 
     # Scenario 1: Clinical only, single row, no patient_id
     res = run_batch_test(
@@ -193,12 +196,13 @@ async def main():
 
     # Scenario 2: Clinical only, single row, with patient_id
     res = run_batch_test(
-        "Scenario 2: Clinical only, with patient_id",
+        "Scenario 2: Clinical only, no patient_id",
         "clinician/batch-assess", c_token,
-        generate_csv([{"patient_name": "Jane Doe", "patient_id": "P-S2", **valid_clinical}]),
+        generate_csv([{"patient_name": "Jane Doe", **valid_clinical}], include_patient_id=False),
         "scenario2.csv", 200
     )
-    if res and res["results"][0]["patient_id"] == "P-S2": scenarios_passed += 1
+    if res and res["results"][0]["status"] == "success": scenarios_passed += 1
+
 
     # Scenario 3: Blank patient name
     res = run_batch_test(
@@ -222,45 +226,49 @@ async def main():
     res = run_batch_test(
         "Scenario 5: Clinical + Blood",
         "clinician/batch-assess", c_token,
-        generate_csv([{"patient_name": "Blood Test", "patient_id": "P-S5", **valid_clinical, **valid_blood}]),
+        generate_csv([{"patient_name": "Blood Test", **valid_clinical, **valid_blood}], include_patient_id=False),
         "scenario5.csv", 200
     )
     if res and res["results"][0]["status"] == "success": scenarios_passed += 1
+
 
     # Scenario 6: Clinical + biopsy
     res = run_batch_test(
         "Scenario 6: Clinical + Biopsy",
         "clinician/batch-assess", c_token,
-        generate_csv([{"patient_name": "Biopsy Test", "patient_id": "P-S6", **valid_clinical, **valid_biopsy}]),
+        generate_csv([{"patient_name": "Biopsy Test", **valid_clinical, **valid_biopsy}], include_patient_id=False),
         "scenario6.csv", 200
     )
     if res and res["results"][0]["status"] == "success": scenarios_passed += 1
+
 
     # Scenario 7: All modalities
     res = run_batch_test(
         "Scenario 7: All 3 modalities",
         "clinician/batch-assess", c_token,
-        generate_csv([{"patient_name": "Full Test", "patient_id": "P-S7", **valid_clinical, **valid_blood, **valid_biopsy}]),
+        generate_csv([{"patient_name": "Full Test", **valid_clinical, **valid_blood, **valid_biopsy}], include_patient_id=False),
         "scenario7.csv", 200
     )
     if res and res["results"][0]["status"] == "success": scenarios_passed += 1
 
+
     # Scenario 8: Mixed batch + Rollback bug check
     mixed_rows = [
         {"patient_name": "Success 1", **valid_clinical},
-        {"patient_name": "Success 2", "patient_id": "P-MIX-2", **valid_clinical, **valid_blood},
-        {"patient_name": "Success 3", "patient_id": "P-MIX-3", **valid_clinical},
+        {"patient_name": "Success 2", **valid_clinical, **valid_blood},
+        {"patient_name": "Success 3", **valid_clinical},
         {"patient_name": "", **valid_clinical}, # Invalid
     ]
     res = run_batch_test(
         "Scenario 8: Mixed batch (Rollback Check)",
         "clinician/batch-assess", c_token,
-        generate_csv(mixed_rows),
+        generate_csv(mixed_rows, include_patient_id=False),
         "scenario8.csv", 200
     )
     if res and res["summary"]["success"] == 3 and res["summary"]["failed"] == 1:
         scenarios_passed += 1
         await verify_database_persistence(res["batch_id"], res["summary"]["success"])
+
 
     # Scenario 9: Missing mandatory column (cli_age)
     # Manual construction to remove column
@@ -317,6 +325,104 @@ async def main():
         "scenario14.csv", 401
     )
     if res is None: scenarios_passed += 1
+
+    # Scenario 15: Unknown patient ID
+    # Verify that providing an ID that doesn't exist in the DB is rejected rather than creating a ghost patient.
+    res = run_batch_test(
+        "Scenario 15: Unknown patient ID",
+        "clinician/batch-assess", c_token,
+        generate_csv([{"patient_name": "Ghost Patient", "patient_id": "P-GHOST-999", **valid_clinical}]),
+        "scenario15.csv", 200
+    )
+
+    if res and res["results"][0]["status"] == "failed" and "not found" in res["results"][0]["error"].lower():
+        scenarios_passed += 1
+
+    # Scenario 16: Known patient ID reuse
+    # Verify the two-step flow: auto-create a patient, capture the ID, then reuse it in a subsequent row.
+    # First create a patient
+    res_create = run_batch_test(
+        "Scenario 16a: Create patient for reuse",
+        "clinician/batch-assess", c_token,
+        generate_csv([{"patient_name": "Reuse Patient", **valid_clinical}], include_patient_id=False),
+        "scenario16a.csv", 200
+    )
+
+    if res_create:
+        captured_id = res_create["results"][0]["patient_id"]
+        # Now reuse that ID
+        res_reuse = run_batch_test(
+            "Scenario 16b: Reuse patient ID",
+            "clinician/batch-assess", c_token,
+            generate_csv([{"patient_name": "Reuse Patient", "patient_id": captured_id, **valid_clinical}]),
+            "scenario16b.csv", 200
+        )
+        if res_reuse and res_reuse["results"][0]["status"] == "success" and res_reuse["results"][0]["patient_id"] == captured_id:
+            scenarios_passed += 1
+    else:
+        print("Scenario 16 failed at creation step")
+
+    # Scenario 17: Patient ID column present but blank
+    res = run_batch_test(
+        "Scenario 17: Blank patient ID column",
+        "clinician/batch-assess", c_token,
+        generate_csv([{"patient_name": "Blank ID", "patient_id": "", **valid_clinical}]),
+        "scenario17.csv", 200
+    )
+    if res and res["results"][0]["status"] == "success" and res["results"][0]["patient_id"]:
+        scenarios_passed += 1
+
+    # Scenario 18: Mixed batch with one unknown patient ID
+    mixed_unknown = [
+        {"patient_name": "Success 1", **valid_clinical},
+        {"patient_name": "Success 2", **valid_clinical},
+        {"patient_name": "Success 3", **valid_clinical},
+        {"patient_name": "Ghost", "patient_id": "P-GHOST-000", **valid_clinical},
+    ]
+    res = run_batch_test(
+        "Scenario 18: Mixed batch (1 unknown ID)",
+        "clinician/batch-assess", c_token,
+        generate_csv(mixed_unknown), # Note: generate_csv adds the col if a row has it
+        "scenario18.csv", 200
+    )
+    # Since include_patient_id=False is used, we must ensure generate_csv handles the mix
+    # The existing generate_csv implementation uses a set of all keys in rows, so it will include patient_id
+    if res and res["summary"]["success"] == 3 and res["summary"]["failed"] == 1 and "not found" in res["results"][3]["error"].lower():
+        scenarios_passed += 1
+
+    # Scenario 19: Real CSV file from disk
+    # Verifies actual file system handling and Supabase Storage integration beyond in-memory buffers.
+    try:
+        url = f"{BASE_URL}/clinician/batch-assess"
+
+        headers = {"Authorization": f"Bearer {c_token}"}
+        with open("tests/fixtures/batch_sample.csv", "rb") as f:
+            files = {"file": ("batch_sample.csv", f, "text/csv")}
+            response = requests.post(url, headers=headers, files=files, timeout=30)
+        
+            if response.status_code == 200:
+                data = response.json()
+                batch_id = data.get("batch_id")
+                summary = data.get("summary", {})
+                results = data.get("results", [])
+                
+                if (
+                    batch_id and 
+                    summary.get("total") == 5 and 
+                    summary.get("success") == 5 and 
+                    summary.get("failed") == 0 and 
+                    all(r.get("status") == "success" for r in results)
+                ):
+                    scenarios_passed += 1
+                    print(f"SUCCESS: Real CSV file uploaded and processed. Batch ID: {batch_id}")
+                else:
+                    print(f"FAILED: Response validation failed. Summary: {summary}")
+            else:
+                print(f"FAILED: Real CSV upload returned {response.status_code}")
+                print(f"Response: {response.text}")
+    except Exception as e:
+        print(f"ERROR during real file test: {e}")
+
 
     print(f"\n\n{'='*30}\nBATCH TEST SUMMARY\n{'='*30}")
     print(f"Total Scenarios: {total_scenarios}")

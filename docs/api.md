@@ -138,13 +138,15 @@ Always required for both member and clinician assessments.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `age` | `float` | Patient age |
-| `menopause` | `int` | `0 = premenopausal`, `1 = postmenopausal` |
+| `menopause` | `int | str` | `0 = premenopausal`, `1 = postmenopausal` |
 | `tumor_size_cm` | `float` | Tumour size in centimetres |
 | `invasive_nodes` | `float` | Invasive lymph node count or value |
-| `breast_side` | `int` | `0 = left`, `1 = right` |
-| `metastasis` | `int` | `0 = no`, `1 = yes` |
-| `breast_quadrant` | `int` | `0 = upper outer`, `1 = upper inner`, `2 = lower outer`, `3 = lower inner` |
-| `breast_disease_history` | `int` | `0 = no`, `1 = yes` |
+| `breast_side` | `int | str` | `0 = left`, `1 = right` |
+| `metastasis` | `int | str` | `0 = no`, `1 = yes` |
+| `breast_quadrant` | `int | str` | `0 = upper outer`, `1 = upper inner`, `2 = lower outer`, `3 = lower inner` |
+| `breast_disease_history` | `int | str` | `0 = no`, `1 = yes` |
+
+Categorical fields (`menopause`, `breast_side`, `metastasis`, `breast_quadrant`, `breast_disease_history`) also accept human-readable strings (e.g., 'postmenopausal', 'left', 'no', 'upper inner'), which are converted to integers server-side.
 
 ### 6.2 `BiopsyData`
 
@@ -498,6 +500,8 @@ The endpoint expects a `multipart/form-data` request with a single file field na
 - `patient_id` (optional)
   - if provided, it must match an existing patient record in the database — rows with an unrecognised `patient_id` are failed, not created
   - if omitted, a new patient record is created automatically using the `patient_name` column
+
+Categorical clinical columns (`cli_menopause`, `cli_breast_side`, `cli_metastasis`, `cli_breast_quadrant`, `cli_breast_disease_history`) accept both integers and human-readable strings.
 
 Optional columns starting with `bio_` or `blood_` are accepted and processed according to the standard clinician assessment logic.
 

@@ -140,7 +140,7 @@ Authentication is performed on the mobile client through Supabase. The backend d
 
 The module defines a `CurrentUser` Pydantic model containing `id`, `email`, and `role`. The `get_current_user` dependency extracts the Bearer token from the incoming request, decodes and verifies the JWT (with a 60-second leeway to handle clock skew between servers), then returns a populated `CurrentUser`. The `require_role(role)` dependency factory wraps `get_current_user` and raises `HTTP 403` when the authenticated user's role does not match the route requirement.
 
-To bridge the gap between Supabase Auth identity and the product's own user records, the API implements an "upsert on first request" pattern. When a clinician submits an assessment or requests their profile via `GET /api/users/me`, the `UserRepository.get_or_create_from_auth_user` method is called. This ensures a product-level user record exists in the `users` table before any assessment persistence occurs.
+To bridge the gap between Supabase Auth identity and the product's own user records, the API implements an "upsert on first request" pattern. When a clinician submits an assessment (via manual entry or batch upload) or requests their profile via `GET /api/users/me`, the `UserRepository.get_or_create_from_auth_user` method is called. This ensures a product-level user record exists in the `users` table before any foreign-key dependent database writes occur.
 
 The backend expects the Supabase JWT payload structure to provide:
 
@@ -166,7 +166,7 @@ This structure ensures that as the API expands, files remain small and dependenc
 
 `api/schemas/assessment.py` defines the request contracts for the assessment flows.
 
-- `ClinicalData`: 8 required clinical fields
+- `ClinicalData`: 8 required clinical fields; categorical fields accept human-readable strings with server-side conversion
 - `BiopsyData`: 30 biopsy fields
 - `BloodPanelData`: 8 blood-panel fields, with age excluded and injected from `ClinicalData` at runtime
 - `MemberPredictionRequest`: wraps `patient_id` and `ClinicalData`
