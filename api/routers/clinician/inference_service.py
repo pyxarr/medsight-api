@@ -82,6 +82,8 @@ def build_assessment_response_payload(
     prediction_result: dict[str, Any],
     shap_drivers: list[dict] | dict | None,
     patient_external_id: str,
+    assessment_id: str | None = None,
+    created_at: str | None = None,
 ) -> dict[str, Any]:
     """Build the clinician assessment response payload."""
     return {
@@ -98,6 +100,8 @@ def build_assessment_response_payload(
             "has_warning": prediction_result["ood_warning"]["has_warning"],
             "flagged": prediction_result["ood_warning"]["flagged"],
         },
+        "assessment_id": assessment_id,
+        "created_at": created_at,
     }
 
 
@@ -108,7 +112,10 @@ async def parse_batch_csv(file: UploadFile) -> tuple[pd.DataFrame, bytes]:
         raise ValueError("The uploaded CSV file is empty.")
 
     try:
-        batch_dataframe = pd.read_csv(io.BytesIO(file_bytes))
+        decoded = file_bytes.decode("utf-8-sig")
+        batch_dataframe = pd.read_csv(
+            io.StringIO(decoded),
+        )
     except Exception as exc:
         raise ValueError("The uploaded file could not be parsed as CSV.") from exc
 

@@ -15,6 +15,7 @@ class AssessmentHistorySummaryResponse(BaseModel):
     """Represent one clinician assessment summary row."""
 
     id: UUID
+    assessment_id: str | None = None
     patient_id: str
     first_name: str
     last_name: str
@@ -39,6 +40,7 @@ class AssessmentHistoryDetailResponse(BaseModel):
     """Represent one full clinician assessment history record."""
 
     id: UUID
+    assessment_id: str | None = None
     patient_id: str
     first_name: str
     last_name: str

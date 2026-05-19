@@ -201,7 +201,7 @@ async def _run_clinician_assessment_pipeline(
     )
 
     try:
-        await create_clinician_assessment(
+        assessment_record = await create_clinician_assessment(
             database_session=database_session,
             clinician_user_id=current_user.id,
             patient_id=patient_uuid,
@@ -225,6 +225,8 @@ async def _run_clinician_assessment_pipeline(
             ood_warning=response_payload["ood_warning"],
             batch_id=batch_id,
         )
+        response_payload["assessment_id"] = str(assessment_record.id)
+        response_payload["created_at"] = assessment_record.created_at.isoformat()
     except Exception as e:
         LOGGER.exception(
             "Failed to persist clinician assessment for patient_id=%s clinician_user_id=%s. Error: %s",
