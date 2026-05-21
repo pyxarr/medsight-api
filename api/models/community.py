@@ -25,7 +25,7 @@ class CommunityPost(Base):
         nullable=False,
     )
     content: Mapped[str] = mapped_column(String, nullable=False)
-    image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    media_url: Mapped[str | None] = mapped_column(String, nullable=True)
     # Cascade delete replies when their parent post is removed so orphaned replies cannot exist.
     parent_post_id: Mapped[PythonUUID | None] = mapped_column(
         UUID(as_uuid=True),

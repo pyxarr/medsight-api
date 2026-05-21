@@ -49,7 +49,7 @@ def _serialise_post(enriched_post_dict: dict) -> PostResponse:
     return PostResponse(
         id=enriched_post_dict["post"].id,
         content=enriched_post_dict["post"].content,
-        image_url=enriched_post_dict["post"].image_url,
+        media_url=enriched_post_dict["post"].media_url,
         view_count=enriched_post_dict["post"].view_count,
         created_at=enriched_post_dict["post"].created_at,
         author=_serialise_author(enriched_post_dict["author"]),

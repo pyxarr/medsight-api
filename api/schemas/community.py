@@ -27,19 +27,6 @@ class ReactionCounts(BaseModel):
     is_bookmarked: bool
 
 
-class PostCreateRequest(BaseModel):
-    """Body for creating a new top-level post."""
-
-    content: str
-    image_url: str | None = None
-
-
-class ReplyCreateRequest(BaseModel):
-    """Body for creating a reply to an existing post."""
-
-    content: str
-
-
 class PostResponse(BaseModel):
     """One post with author details and reaction counts."""
 
@@ -47,7 +34,7 @@ class PostResponse(BaseModel):
 
     id: UUID
     content: str
-    image_url: str | None
+    media_url: str | None
     view_count: int
     created_at: datetime
     author: AuthorInfo
@@ -65,7 +52,7 @@ class PostDetailResponse(BaseModel):
 
     id: UUID
     content: str
-    image_url: str | None
+    media_url: str | None
     view_count: int
     created_at: datetime
     author: AuthorInfo

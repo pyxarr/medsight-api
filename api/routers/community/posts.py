@@ -1,23 +1,32 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.repositories.community_repository import CommunityRepository
 from api.db.session import get_db
 from api.lib.auth import CurrentUser, get_current_user
+from api.lib.storage import (
+    build_community_media_path,
+    delete_community_media,
+    extract_storage_path_from_url,
+    get_public_media_url,
+    upload_community_media,
+)
 from api.schemas.community import (
     AuthorInfo,
     FeedResponse,
-    PostCreateRequest,
     PostDetailResponse,
     PostResponse,
     ReactionCounts,
-    ReplyCreateRequest,
     ReplyResponse,
     SearchResponse,
     UserSearchResult,
 )
+
+LOGGER = logging.getLogger(__name__)
+
+MAX_MEDIA_SIZE_BYTES = 5 * 1024 * 1024
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,7 +63,7 @@ def _serialise_post(enriched_post_dict: dict) -> PostResponse:
     return PostResponse(
         id=enriched_post_dict["post"].id,
         content=enriched_post_dict["post"].content,
-        image_url=enriched_post_dict["post"].image_url,
+        media_url=enriched_post_dict["post"].media_url,
         view_count=enriched_post_dict["post"].view_count,
         created_at=enriched_post_dict["post"].created_at,
         author=_serialise_author(enriched_post_dict["author"]),
@@ -193,19 +202,48 @@ async def search_community(
 
 @router.post("/posts", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
 async def create_community_post(
-    body: PostCreateRequest,
+    content: str = Form(...),
+    file: UploadFile | None = File(None),
     current_user: CurrentUser = Depends(get_current_user),
     database_session: AsyncSession = Depends(get_db),
 ) -> PostResponse:
-    """Create a new top-level community post. The `content` field is required and supports plain text. The `image_url` field is optional and accepts a Supabase Storage public URL for an attached image. The post is attributed to the authenticated user."""
+    """Create a new top-level community post. The `content` field is required and supports plain text. An optional `file` field accepts any media type (images, videos, or other files) up to 5MB. The media is uploaded to Supabase Storage and a public URL is attached to the post. The post is attributed to the authenticated user."""
     repository = CommunityRepository()
+
+    media_url = None
+    if file is not None:
+        file_bytes = await file.read()
+        if len(file_bytes) > MAX_MEDIA_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Media file exceeds the 5MB size limit.",
+            )
+
+        storage_path = build_community_media_path(str(current_user.id), file.filename or "upload")
+        try:
+            upload_community_media(
+                file_bytes=file_bytes,
+                storage_path=storage_path,
+                content_type=file.content_type or "application/octet-stream",
+            )
+        except RuntimeError as exc:
+            LOGGER.exception(
+                "Failed to upload media for user_id=%s",
+                current_user.id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Media could not be uploaded. Please try again or contact support if the problem persists.",
+            )
+
+        media_url = get_public_media_url(storage_path)
 
     try:
         post = await repository.create_post(
             database_session=database_session,
             author_user_id=current_user.id,
-            content=body.content,
-            image_url=body.image_url,
+            content=content,
+            media_url=media_url,
         )
     except Exception:
         LOGGER.exception(
@@ -223,7 +261,7 @@ async def create_community_post(
     return PostResponse(
         id=post.id,
         content=post.content,
-        image_url=post.image_url,
+        media_url=post.media_url,
         view_count=post.view_count,
         created_at=post.created_at,
         author=_serialise_author(
@@ -275,7 +313,7 @@ async def get_community_post(
     return PostDetailResponse(
         id=result["post"].id,
         content=result["post"].content,
-        image_url=result["post"].image_url,
+        media_url=result["post"].media_url,
         view_count=result["post"].view_count,
         created_at=result["post"].created_at,
         author=_serialise_author(result["author"]),
@@ -292,7 +330,7 @@ async def get_community_post(
             ReplyResponse(
                 id=reply["post"].id,
                 content=reply["post"].content,
-                image_url=reply["post"].image_url,
+                media_url=reply["post"].media_url,
                 view_count=reply["post"].view_count,
                 created_at=reply["post"].created_at,
                 author=_serialise_author(reply["author"]),
@@ -318,19 +356,48 @@ async def get_community_post(
 )
 async def create_community_reply(
     post_id: str,
-    body: ReplyCreateRequest,
+    content: str = Form(...),
+    file: UploadFile | None = File(None),
     current_user: CurrentUser = Depends(get_current_user),
     database_session: AsyncSession = Depends(get_db),
 ) -> ReplyResponse:
-    """Create a reply to an existing post. The reply is attributed to the authenticated user and linked to the parent post. The parent post must exist and must not be soft-deleted. Raises HTTP 404 if the parent post does not exist or has been soft-deleted."""
+    """Create a reply to an existing post. The reply is attributed to the authenticated user and linked to the parent post. The `content` field is required. An optional `file` field accepts any media type (images, videos, or other files) up to 5MB. The media is uploaded to Supabase Storage and a public URL is attached to the reply. Raises HTTP 404 if the parent post does not exist or has been soft-deleted."""
     repository = CommunityRepository()
+
+    media_url = None
+    if file is not None:
+        file_bytes = await file.read()
+        if len(file_bytes) > MAX_MEDIA_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Media file exceeds the 5MB size limit.",
+            )
+
+        storage_path = build_community_media_path(str(current_user.id), file.filename or "upload")
+        try:
+            upload_community_media(
+                file_bytes=file_bytes,
+                storage_path=storage_path,
+                content_type=file.content_type or "application/octet-stream",
+            )
+        except RuntimeError as exc:
+            LOGGER.exception(
+                "Failed to upload media for user_id=%s",
+                current_user.id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Media could not be uploaded. Please try again or contact support if the problem persists.",
+            )
+
+        media_url = get_public_media_url(storage_path)
 
     try:
         reply = await repository.create_reply(
             database_session=database_session,
             author_user_id=current_user.id,
             post_id=post_id,
-            content=body.content,
+            content=content,
         )
     except HTTPException:
         raise
@@ -351,7 +418,7 @@ async def create_community_reply(
     return ReplyResponse(
         id=reply.id,
         content=reply.content,
-        image_url=reply.image_url,
+        media_url=reply.media_url,
         view_count=reply.view_count,
         created_at=reply.created_at,
         author=_serialise_author(
@@ -375,14 +442,50 @@ async def delete_community_post(
     current_user: CurrentUser = Depends(get_current_user),
     database_session: AsyncSession = Depends(get_db),
 ) -> None:
-    """Soft-delete a post by setting its `deleted_at` timestamp. Only the post author can delete it. Raises HTTP 404 if the post does not exist. Raises HTTP 403 if the post does not belong to the authenticated user."""
+    """Soft-delete a post by setting its `deleted_at` timestamp. Only the post author can delete it. If the post has attached media, the media file is also deleted from Supabase Storage. Media deletion failure is logged but does not block the soft-delete. Raises HTTP 404 if the post does not exist. Raises HTTP 403 if the post does not belong to the authenticated user."""
     repository = CommunityRepository()
 
+    post_query = repository._get_post_query(post_id)
     try:
+        post_result = await database_session.execute(post_query)
+        post = post_result.scalar_one_or_none()
+
+        if post is None:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        if post.author_user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorised to delete this post")
+
+        if post.media_url is not None:
+            storage_path = extract_storage_path_from_url(post.media_url)
+            if storage_path is not None:
+                try:
+                    delete_community_media(storage_path)
+                except RuntimeError:
+                    LOGGER.exception(
+                        "Failed to delete media for post_id=%s from Supabase Storage",
+                        post_id,
+                    )
+
         await repository.soft_delete_post(
             database_session=database_session,
             post_id=post_id,
             requesting_user_id=current_user.id,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception(
+            "Failed to delete post_id=%s for user_id=%s",
+            post_id,
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Post could not be deleted. Please try again or contact "
+                "support if the problem persists."
+            ),
         )
     except HTTPException:
         raise

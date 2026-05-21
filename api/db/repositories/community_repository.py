@@ -13,18 +13,22 @@ from api.models.user import User
 class CommunityRepository:
     """Handle persistence and retrieval for community posts, reactions, and follows."""
 
+    def _get_post_query(self, post_id: str):
+        """Return a select query for one post by identifier."""
+        return select(CommunityPost).where(CommunityPost.id == post_id)
+
     async def create_post(
         self,
         database_session: AsyncSession,
         author_user_id: PythonUUID,
         content: str,
-        image_url: str | None = None,
+        media_url: str | None = None,
     ) -> CommunityPost:
         """Insert a new top-level community post and return the created record."""
         post = CommunityPost(
             author_user_id=author_user_id,
             content=content,
-            image_url=image_url,
+            media_url=media_url,
             parent_post_id=None,
         )
         database_session.add(post)

@@ -633,7 +633,7 @@ Shared response shapes used across community endpoints:
 | --- | --- | --- |
 | `id` | `UUID` | Post identifier |
 | `content` | `string` | Post text content |
-| `image_url` | `string | null` | Optional attached image URL |
+| `media_url` | `string | null` | Optional attached media URL (images, videos, or other files) from Supabase Storage |
 | `view_count` | `integer` | Number of times the post has been viewed |
 | `created_at` | `datetime` | Post creation timestamp |
 | `author` | `AuthorInfo` | Author profile |
@@ -686,13 +686,19 @@ Response fields: `posts` (array of `PostResponse`), `users` (array of user objec
 
 Required role: any authenticated user
 
-Purpose: creates a new top-level community post attributed to the authenticated user.
+Purpose: creates a new top-level community post attributed to the authenticated user. The request uses `multipart/form-data` to support optional media attachments.
 
-Request body:
-- `content` (required, string): post text
-- `image_url` (optional, string): Supabase Storage public URL for attached image
+Request format:
+- `content` (required, form field): post text content
+- `file` (optional, file upload): any media type (images, videos, or other files), maximum 5MB
 
-Response shape: `PostResponse` with initial zero reaction counts
+The media file is uploaded to Supabase Storage and a public URL is attached to the post. If no file is provided, the post is created with text only.
+
+Response shape: `PostResponse` with `media_url` set to the public Supabase Storage URL if a file was uploaded, or `null` if no file was provided.
+
+Error responses:
+- `413`: media file exceeds the 5MB size limit
+- `500`: media upload failed or post could not be created
 
 ### `GET /api/community/posts/{id}`
 
@@ -709,21 +715,26 @@ Error responses:
 
 Required role: any authenticated user
 
-Purpose: creates a reply to an existing post. The reply is attributed to the authenticated user and linked to the parent post.
+Purpose: creates a reply to an existing post. The reply is attributed to the authenticated user and linked to the parent post. The request uses `multipart/form-data` to support optional media attachments.
 
-Request body:
-- `content` (required, string): reply text
+Request format:
+- `content` (required, form field): reply text content
+- `file` (optional, file upload): any media type (images, videos, or other files), maximum 5MB
+
+The media file is uploaded to Supabase Storage and a public URL is attached to the reply. If no file is provided, the reply is created with text only.
 
 Response shape: `PostResponse` with initial zero reaction counts
 
 Error responses:
 - `404`: parent post not found or has been soft-deleted
+- `413`: media file exceeds the 5MB size limit
+- `500`: media upload failed or reply could not be created
 
 ### `DELETE /api/community/posts/{id}`
 
 Required role: any authenticated user
 
-Purpose: soft-deletes a post by setting its `deleted_at` timestamp. Only the post author can delete it.
+Purpose: soft-deletes a post by setting its `deleted_at` timestamp. Only the post author can delete it. If the post has attached media, the media file is also deleted from Supabase Storage. Media deletion failure is logged but does not block the soft-delete.
 
 Error responses:
 - `403`: the post does not belong to the authenticated user
