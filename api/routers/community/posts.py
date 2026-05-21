@@ -1,0 +1,411 @@
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from api.db.repositories.community_repository import CommunityRepository
+from api.db.session import get_db
+from api.lib.auth import CurrentUser, get_current_user
+from api.schemas.community import (
+    AuthorInfo,
+    FeedResponse,
+    PostCreateRequest,
+    PostDetailResponse,
+    PostResponse,
+    ReactionCounts,
+    ReplyCreateRequest,
+    ReplyResponse,
+    SearchResponse,
+    UserSearchResult,
+)
+
+LOGGER = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+def _serialise_author(author) -> AuthorInfo:
+    """Convert one user record into an author info response."""
+    return AuthorInfo(
+        id=author.id,
+        display_name=author.display_name,
+        username=author.username,
+        avatar_url=author.avatar_url,
+        role=author.role,
+        is_verified=author.is_verified,
+    )
+
+
+def _serialise_reaction_counts(counts_dict: dict) -> ReactionCounts:
+    """Convert one reaction counts dictionary into a reaction counts response."""
+    return ReactionCounts(
+        like_count=counts_dict["like_count"],
+        reply_count=counts_dict["reply_count"],
+        repost_count=counts_dict["repost_count"],
+        bookmark_count=counts_dict["bookmark_count"],
+        is_liked=counts_dict["is_liked"],
+        is_reposted=counts_dict["is_reposted"],
+        is_bookmarked=counts_dict["is_bookmarked"],
+    )
+
+
+def _serialise_post(enriched_post_dict: dict) -> PostResponse:
+    """Convert one enriched post dictionary into a post response."""
+    return PostResponse(
+        id=enriched_post_dict["post"].id,
+        content=enriched_post_dict["post"].content,
+        image_url=enriched_post_dict["post"].image_url,
+        view_count=enriched_post_dict["post"].view_count,
+        created_at=enriched_post_dict["post"].created_at,
+        author=_serialise_author(enriched_post_dict["author"]),
+        reaction_counts=_serialise_reaction_counts({
+            "like_count": enriched_post_dict["like_count"],
+            "reply_count": enriched_post_dict["reply_count"],
+            "repost_count": enriched_post_dict["repost_count"],
+            "bookmark_count": enriched_post_dict["bookmark_count"],
+            "is_liked": enriched_post_dict["is_liked"],
+            "is_reposted": enriched_post_dict["is_reposted"],
+            "is_bookmarked": enriched_post_dict["is_bookmarked"],
+        }),
+    )
+
+
+def _serialise_user(user_dict: dict) -> UserSearchResult:
+    """Convert one user dictionary into a user search result."""
+    return UserSearchResult(
+        id=user_dict["id"],
+        display_name=user_dict["display_name"],
+        username=user_dict["username"],
+        avatar_url=user_dict["avatar_url"],
+        role=user_dict["role"],
+        is_verified=user_dict["is_verified"],
+    )
+
+
+@router.get("/feed", response_model=FeedResponse)
+async def get_community_feed(
+    current_user: CurrentUser = Depends(get_current_user),
+    database_session: AsyncSession = Depends(get_db),
+    limit: int = Query(default=20, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+) -> FeedResponse:
+    """Return a paginated community feed of top-level posts ordered by creation time, newest first. Each post includes the author profile, reaction counts, and flags indicating whether the requesting user has liked, reposted, or bookmarked it. Use `limit` and `offset` for infinite scroll pagination."""
+    repository = CommunityRepository()
+
+    try:
+        total_posts, posts = await repository.get_feed(
+            database_session=database_session,
+            requesting_user_id=current_user.id,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Failed to load community feed for user_id=%s",
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Feed could not be loaded. Please try again or contact "
+                "support if the problem persists."
+            ),
+        )
+
+    return FeedResponse(
+        total=total_posts,
+        results=[_serialise_post(post) for post in posts],
+    )
+
+
+@router.get("/feed/following", response_model=FeedResponse)
+async def get_following_feed(
+    current_user: CurrentUser = Depends(get_current_user),
+    database_session: AsyncSession = Depends(get_db),
+    limit: int = Query(default=20, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+) -> FeedResponse:
+    """Return a paginated feed of posts from users the authenticated user follows, ordered by creation time, newest first. Each post includes the author profile, reaction counts, and flags indicating whether the requesting user has liked, reposted, or bookmarked it. Use `limit` and `offset` for infinite scroll pagination."""
+    repository = CommunityRepository()
+
+    try:
+        total_posts, posts = await repository.get_following_feed(
+            database_session=database_session,
+            requesting_user_id=current_user.id,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Failed to load following feed for user_id=%s",
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Following feed could not be loaded. Please try again or contact "
+                "support if the problem persists."
+            ),
+        )
+
+    return FeedResponse(
+        total=total_posts,
+        results=[_serialise_post(post) for post in posts],
+    )
+
+
+@router.get("/search", response_model=SearchResponse)
+async def search_community(
+    current_user: CurrentUser = Depends(get_current_user),
+    database_session: AsyncSession = Depends(get_db),
+    q: str = Query(default="", min_length=1),
+    limit: int = Query(default=20, ge=1, le=50),
+) -> SearchResponse:
+    """Search community content by keyword. Performs a case-insensitive substring match on post content for top-level posts, and on username and display name for users. Returns both result sets separately. Use `limit` to control the maximum number of results per set."""
+    repository = CommunityRepository()
+
+    try:
+        results = await repository.search(
+            database_session=database_session,
+            query=q,
+            requesting_user_id=current_user.id,
+            limit=limit,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Failed to search community for user_id=%s query=%s",
+            current_user.id,
+            q,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Search could not be completed. Please try again or contact "
+                "support if the problem persists."
+            ),
+        )
+
+    return SearchResponse(
+        posts=[_serialise_post(post) for post in results["posts"]],
+        users=[_serialise_user(user) for user in results["users"]],
+    )
+
+
+@router.post("/posts", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
+async def create_community_post(
+    body: PostCreateRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    database_session: AsyncSession = Depends(get_db),
+) -> PostResponse:
+    """Create a new top-level community post. The `content` field is required and supports plain text. The `image_url` field is optional and accepts a Supabase Storage public URL for an attached image. The post is attributed to the authenticated user."""
+    repository = CommunityRepository()
+
+    try:
+        post = await repository.create_post(
+            database_session=database_session,
+            author_user_id=current_user.id,
+            content=body.content,
+            image_url=body.image_url,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Failed to create post for user_id=%s",
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Post could not be created. Please try again or contact "
+                "support if the problem persists."
+            ),
+        )
+
+    return PostResponse(
+        id=post.id,
+        content=post.content,
+        image_url=post.image_url,
+        view_count=post.view_count,
+        created_at=post.created_at,
+        author=_serialise_author(
+            await _get_author(database_session, current_user.id)
+        ),
+        reaction_counts=ReactionCounts(
+            like_count=0,
+            reply_count=0,
+            repost_count=0,
+            bookmark_count=0,
+            is_liked=False,
+            is_reposted=False,
+            is_bookmarked=False,
+        ),
+    )
+
+
+@router.get("/posts/{post_id}", response_model=PostDetailResponse)
+async def get_community_post(
+    post_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    database_session: AsyncSession = Depends(get_db),
+) -> PostDetailResponse:
+    """Return a single post identified by its UUID, along with all direct replies. The post view count is incremented by one on each request. Replies are ordered by creation time, oldest first. Each post and reply includes the author profile, reaction counts, and flags for the requesting user interactions. Raises HTTP 404 if the post does not exist or has been soft-deleted."""
+    repository = CommunityRepository()
+
+    try:
+        result = await repository.get_post_with_replies(
+            database_session=database_session,
+            post_id=post_id,
+            requesting_user_id=current_user.id,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception(
+            "Failed to load post_id=%s for user_id=%s",
+            post_id,
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Post could not be loaded. Please try again or contact "
+                "support if the problem persists."
+            ),
+        )
+
+    return PostDetailResponse(
+        id=result["post"].id,
+        content=result["post"].content,
+        image_url=result["post"].image_url,
+        view_count=result["post"].view_count,
+        created_at=result["post"].created_at,
+        author=_serialise_author(result["author"]),
+        reaction_counts=_serialise_reaction_counts({
+            "like_count": result["like_count"],
+            "reply_count": result["reply_count"],
+            "repost_count": result["repost_count"],
+            "bookmark_count": result["bookmark_count"],
+            "is_liked": result["is_liked"],
+            "is_reposted": result["is_reposted"],
+            "is_bookmarked": result["is_bookmarked"],
+        }),
+        replies=[
+            ReplyResponse(
+                id=reply["post"].id,
+                content=reply["post"].content,
+                image_url=reply["post"].image_url,
+                view_count=reply["post"].view_count,
+                created_at=reply["post"].created_at,
+                author=_serialise_author(reply["author"]),
+                reaction_counts=_serialise_reaction_counts({
+                    "like_count": reply["like_count"],
+                    "reply_count": reply["reply_count"],
+                    "repost_count": reply["repost_count"],
+                    "bookmark_count": reply["bookmark_count"],
+                    "is_liked": reply["is_liked"],
+                    "is_reposted": reply["is_reposted"],
+                    "is_bookmarked": reply["is_bookmarked"],
+                }),
+            )
+            for reply in result["replies"]
+        ],
+    )
+
+
+@router.post(
+    "/posts/{post_id}/replies",
+    response_model=ReplyResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_community_reply(
+    post_id: str,
+    body: ReplyCreateRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    database_session: AsyncSession = Depends(get_db),
+) -> ReplyResponse:
+    """Create a reply to an existing post. The reply is attributed to the authenticated user and linked to the parent post. The parent post must exist and must not be soft-deleted. Raises HTTP 404 if the parent post does not exist or has been soft-deleted."""
+    repository = CommunityRepository()
+
+    try:
+        reply = await repository.create_reply(
+            database_session=database_session,
+            author_user_id=current_user.id,
+            post_id=post_id,
+            content=body.content,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception(
+            "Failed to create reply to post_id=%s for user_id=%s",
+            post_id,
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Reply could not be created. Please try again or contact "
+                "support if the problem persists."
+            ),
+        )
+
+    return ReplyResponse(
+        id=reply.id,
+        content=reply.content,
+        image_url=reply.image_url,
+        view_count=reply.view_count,
+        created_at=reply.created_at,
+        author=_serialise_author(
+            await _get_author(database_session, current_user.id)
+        ),
+        reaction_counts=ReactionCounts(
+            like_count=0,
+            reply_count=0,
+            repost_count=0,
+            bookmark_count=0,
+            is_liked=False,
+            is_reposted=False,
+            is_bookmarked=False,
+        ),
+    )
+
+
+@router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_community_post(
+    post_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    database_session: AsyncSession = Depends(get_db),
+) -> None:
+    """Soft-delete a post by setting its `deleted_at` timestamp. Only the post author can delete it. Raises HTTP 404 if the post does not exist. Raises HTTP 403 if the post does not belong to the authenticated user."""
+    repository = CommunityRepository()
+
+    try:
+        await repository.soft_delete_post(
+            database_session=database_session,
+            post_id=post_id,
+            requesting_user_id=current_user.id,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception(
+            "Failed to delete post_id=%s for user_id=%s",
+            post_id,
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Post could not be deleted. Please try again or contact "
+                "support if the problem persists."
+            ),
+        )
+
+
+async def _get_author(database_session: AsyncSession, user_id: str):
+    """Fetch the author record for serialisation after post creation."""
+    from api.models.user import User
+    from sqlalchemy import select
+
+    user_query = select(User).where(User.id == user_id)
+    user_result = await database_session.execute(user_query)
+    return user_result.scalar_one()

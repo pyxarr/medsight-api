@@ -1,15 +1,16 @@
 ## MedSight API Database Architecture
 
 ## 1. Current State
-The `medsight-api` codebase includes a database access layer and persistence for clinician assessments, patient identity, and batch sessions. The repository layer, persistence models, and associated SQL migrations are implemented.
+The `medsight-api` codebase includes a database access layer and persistence for clinician assessments, patient identity, batch sessions, and community features. The repository layer, persistence models, and associated SQL migrations are implemented.
 
 What exists today:
 - a Supabase PostgreSQL connection via SQLAlchemy (asyncpg)
-- a repository layer for assessment, patient, and batch CRUD operations
+- a repository layer for assessment, patient, batch, and community CRUD operations
 - automatic persistence of clinician assessment results
 - patient identity management with `P-YYYY-SEQ` generation
 - batch session tracking for CSV uploads
 - retrieval and soft-deletion endpoints for clinician assessment history
+- community posts, replies, reactions, and follows with paginated feeds
 - authentication boundary verified via Supabase JWTs
 
 
@@ -77,15 +78,20 @@ Notifications are planned for product workflows such as:
 - community interaction alerts
 - push notification delivery state
 
-### 5.4 Community
+### 5.4 Community (Implemented)
 
-If community features are stored in Supabase, the database will also need records for:
+The community feature stores posts, replies, reactions, and follow relationships. Posts and replies share the same `community_posts` table via a self-referencing foreign key. Reactions are tracked per user per post per type with a unique constraint preventing duplicates. Follow relationships link pairs of users with a unique constraint preventing duplicate follows.
 
-- posts
-- replies
-- reactions or interaction primitives
-- moderation state
-- clinician verification badge display data
+Implemented responsibilities:
+
+- posts and replies via self-referencing `parent_post_id`
+- reaction tracking (like, repost, bookmark) with toggle semantics
+- follow/unfollow relationships between users
+- soft deletion of posts
+- view count tracking
+- paginated feed and following feed queries
+- bookmark retrieval
+- keyword search across posts and users
 
 ### 5.5 Audit and Safety Data
 
@@ -186,39 +192,90 @@ Suggested columns:
 | `metadata` | `jsonb` | Optional structured context |
 | `created_at` | `timestamp with time zone` | Delivery creation time |
 
-## 7. Proposed Supporting Tables
+## 7. Implemented Supporting Tables
 
-The planned product surface implies several supporting tables even though they are not yet required by the running backend.
-
-### 7.1 `community_posts`
+### 7.1 `community_posts` (Implemented)
 
 Purpose:
 
 - shared feed items posted by members and clinicians
+- replies to posts via self-referencing `parent_post_id`
 
-Suggested columns:
+Columns:
 
-- `id`
-- `author_user_id`
-- `content`
-- `parent_post_id` for replies
-- `created_at`
-- `updated_at`
-- `deleted_at`
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key (server_default=gen_random_uuid()) |
+| `author_user_id` | `uuid` | Foreign key to `users.id`, ondelete=CASCADE |
+| `content` | `text` | Post or reply text, not nullable |
+| `image_url` | `text` | Nullable Supabase Storage URL for attached images |
+| `parent_post_id` | `uuid` | Nullable self-reference to `community_posts.id`, ondelete=CASCADE |
+| `view_count` | `integer` | Default 0, incremented on post view |
+| `created_at` | `timestamp with time zone` | server_default=now() |
+| `deleted_at` | `timestamp with time zone` | Nullable soft-delete support |
 
-### 7.2 `community_reactions`
+Design decisions:
+
+- `parent_post_id` uses CASCADE delete because replies are meaningless without their parent post
+- `author_user_id` uses CASCADE delete because posts are owned by their author
+- `view_count` has a server-side default so the database maintains the counter even for direct SQL inserts
+
+### 7.2 `community_reactions` (Implemented)
 
 Purpose:
 
-- interaction tracking if likes or similar mechanics are introduced
+- interaction tracking for likes, reposts, and bookmarks
+- one row per user per post per reaction type
 
-### 7.3 `assessment_files`
+Columns:
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key (server_default=gen_random_uuid()) |
+| `post_id` | `uuid` | Foreign key to `community_posts.id`, ondelete=CASCADE |
+| `user_id` | `uuid` | Foreign key to `users.id`, ondelete=CASCADE |
+| `reaction_type` | `text` | Valid values: `like`, `repost`, `bookmark` |
+| `created_at` | `timestamp with time zone` | server_default=now() |
+
+Constraints:
+
+- unique constraint on (`post_id`, `user_id`, `reaction_type`) prevents duplicate reactions
+
+Design decisions:
+
+- both foreign keys use CASCADE delete because reactions have no meaning without the post or user
+- reaction type is stored as text rather than an enum to allow future extension without schema changes
+
+### 7.3 `follows` (Implemented)
+
+Purpose:
+
+- follower-following relationships between users
+
+Columns:
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key (server_default=gen_random_uuid()) |
+| `follower_id` | `uuid` | Foreign key to `users.id`, ondelete=CASCADE |
+| `following_id` | `uuid` | Foreign key to `users.id`, ondelete=CASCADE |
+| `created_at` | `timestamp with time zone` | server_default=now() |
+
+Constraints:
+
+- unique constraint on (`follower_id`, `following_id`) prevents duplicate follows
+
+Design decisions:
+
+- both foreign keys use CASCADE delete so the relationship is removed when either user account is deleted
+
+### 7.4 `assessment_files`
 
 Purpose:
 
 - file references for batch uploads, generated reports, or clinician attachments
 
-### 7.4 `verification_requests`
+### 7.5 `verification_requests`
 
 Purpose:
 
@@ -233,7 +290,10 @@ users
   ├── one-to-many patients
   ├── one-to-many batches
   ├── one-to-many notifications
-  └── one-to-many community_posts
+  ├── one-to-many community_posts (as author)
+  ├── one-to-many community_reactions
+  ├── one-to-many follows (as follower)
+  └── one-to-many follows (as following)
 
 patients
   └── one-to-many assessments
@@ -242,7 +302,8 @@ batches
   └── one-to-many assessments
 
 community_posts
-  └── self-referencing parent_post_id for reply threads
+  ├── self-referencing parent_post_id for reply threads
+  └── one-to-many community_reactions
 ```
 
 This keeps the machine learning result record central while allowing product features to grow around it.
@@ -311,6 +372,27 @@ When persistence is added, these indexes will likely be required early.
 - index on `is_read`
 - index on `created_at`
 
+### `community_posts`
+
+- index on `author_user_id`
+- index on `parent_post_id`
+- index on `created_at`
+- partial index on `deleted_at is null` for active post queries
+- composite index on (`parent_post_id`, `created_at`) for reply ordering
+
+### `community_reactions`
+
+- index on `post_id`
+- index on `user_id`
+- composite index on (`post_id`, `reaction_type`) for reaction count queries
+- composite index on (`user_id`, `reaction_type`) for bookmark retrieval
+
+### `follows`
+
+- composite index on (`follower_id`, `following_id`) for follow lookups
+- index on `follower_id` for following feed queries
+- index on `following_id` for follower list queries
+
 ## 11. Access Control Considerations
 
 The repository already enforces role-based route access at the API layer. When database integration is added, the same role model must carry through to row-level data access.
@@ -341,8 +423,9 @@ Important principles:
 The following do not currently exist in `medsight-api`:
 
 - notification storage and delivery
-- application-level user profile management (the `users` table exists but is not yet actively managed by the API)
-- community feature persistence
+- application-level user profile management (the `users` table exists but is not yet actively managed by the API beyond the upsert-on-first-request pattern)
+- assessment file references
+- clinician verification request workflows
 
 This document is therefore partly architectural target state and partly implementation boundary record.
 
@@ -356,7 +439,7 @@ When database work begins, the most sensible order is:
 4. [completed] add history retrieval for clinicians
 5. [completed] implement clinician batch upload flow
 6. add member-linked assessment persistence where appropriate
-7. introduce `notifications`
-8. expand into community tables and related endpoints
+7. [completed] implement community tables and related endpoints
+8. introduce `notifications`
 
 This sequence aligns with the current backend, where assessment generation already exists but persistence does not.

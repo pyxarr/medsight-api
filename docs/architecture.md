@@ -389,4 +389,12 @@ More variables will be added as Supabase database integration is implemented.
 
 ## 10. Planned Additions
 
-The current architecture is designed to expand into persistent product workflows without changing the core machine learning serving model. Planned additions include `users` table and `notifications` table. The API surface will expand beyond prediction and history to cover batch upload, community, notifications, and profile flows. Clinician assessment output is also expected to grow into PDF report generation for export and sharing. Research workflows will require a dedicated batch CSV processing endpoint. Mobile engagement flows are expected to add push notifications through Expo Notifications.
+The current architecture has expanded beyond the initial prediction-only surface. The community feature is now implemented with ORM models, database migrations, a repository layer, Pydantic schemas, and 13 API endpoints covering posts, replies, reactions, bookmarks, follows, and search.
+
+Remaining planned additions include:
+
+- `notifications` table and delivery system for clinician verification updates, assessment follow-up reminders, and community interaction alerts
+- application-level user profile management endpoints beyond the current upsert-on-first-request pattern
+- clinician verification request workflows
+- PDF report generation for clinician assessment export
+- push notifications through Expo Notifications for mobile engagement

@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from api.routers.member import member_router
 from api.routers.clinician import clinician_router
 from api.routers.user import router as user_router
+from api.routers.community import community_router
 # Register ORM model metadata before startup so SQLAlchemy is aware of all tables.
 import api.models.user
 import api.models.assessment
@@ -68,6 +69,7 @@ app = FastAPI(
 app.include_router(member_router, prefix="/api/member", tags=["Member"])
 app.include_router(clinician_router, prefix="/api/clinician", tags=["Clinician"])
 app.include_router(user_router, prefix="/api/users", tags=["Users"])
+app.include_router(community_router, prefix="/api/community", tags=["Community"])
 
 
 @app.get("/")

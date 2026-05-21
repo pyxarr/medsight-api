@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-The current HTTP API is intentionally small. It exposes one public health route and two protected assessment routes. The backend is not a general CRUD platform. Its main job is to validate authenticated requests, convert request bodies into the expected machine learning input shapes, invoke the loaded inference components, and return role-appropriate responses.
+The HTTP API serves two primary concerns: clinical decision support through machine learning inference and community engagement through social features. The backend validates authenticated requests, converts request bodies into the expected machine learning input shapes, invokes the loaded inference components, and returns role-appropriate responses. Community endpoints manage posts, replies, reactions, bookmarks, and follow relationships with paginated feeds.
 
 All machine learning artefacts are loaded during application startup and accessed through `request.app.state`. No endpoint trains, refits, or persists machine learning state during request handling.
 
@@ -96,6 +96,19 @@ require_role("clinician")
 | `GET` | `/api/clinician/assessments` | Yes | `clinician` | Paginated assessment history list |
 | `GET` | `/api/clinician/assessments/{id}` | Yes | `clinician` | Full assessment detail record |
 | `DELETE` | `/api/clinician/assessments/{id}` | Yes | `clinician` | Soft delete assessment record |
+| `GET` | `/api/community/feed` | Yes | Any | Paginated community feed |
+| `GET` | `/api/community/feed/following` | Yes | Any | Feed filtered to followed users |
+| `GET` | `/api/community/search` | Yes | Any | Search posts and users |
+| `POST` | `/api/community/posts` | Yes | Any | Create a post |
+| `GET` | `/api/community/posts/{id}` | Yes | Any | Single post with replies |
+| `POST` | `/api/community/posts/{id}/replies` | Yes | Any | Reply to a post |
+| `DELETE` | `/api/community/posts/{id}` | Yes | Any | Soft-delete own post |
+| `POST` | `/api/community/posts/{id}/like` | Yes | Any | Toggle like reaction |
+| `POST` | `/api/community/posts/{id}/repost` | Yes | Any | Toggle repost reaction |
+| `POST` | `/api/community/posts/{id}/bookmark` | Yes | Any | Toggle bookmark reaction |
+| `GET` | `/api/community/bookmarks` | Yes | Any | Paginated bookmarked posts |
+| `POST` | `/api/community/users/{id}/follow` | Yes | Any | Follow a user |
+| `DELETE` | `/api/community/users/{id}/follow` | Yes | Any | Unfollow a user |
 
 
 ## 5. Health Route
@@ -474,7 +487,7 @@ Flagged feature detail includes:
 - number of standard deviations from the UCTH training mean
 - severity label
 
-## 8.7 Batch Assessment Endpoint
+## 9. Batch Assessment Endpoint
 
 ### `POST /api/clinician/batch-assess`
 
@@ -483,10 +496,10 @@ Required role:
 clinician
 ```
 
-#### 8.7.1 Purpose
+#### 9.1 Purpose
 Allows clinicians to upload a CSV or XLSX file containing multiple patient records. The API processes each row independently; successful rows are persisted as assessments, while failed rows are reported in the response without aborting the entire batch.
 
-#### 8.7.2 Request Format
+#### 9.2 Request Format
 The endpoint expects a `multipart/form-data` request with a single file field named `file`. The uploaded file (.csv or .xlsx) must contain the following mandatory columns:
 - `patient_name`
 - `cli_age`
@@ -505,7 +518,7 @@ Categorical clinical columns (`cli_menopause`, `cli_breast_side`, `cli_metastasi
 
 Optional columns starting with `bio_` or `blood_` are accepted and processed according to the standard clinician assessment logic.
 
-#### 8.7.3 Response Shape
+#### 9.3 Response Shape
 ```json
 {
   "batch_id": "UUID",
@@ -533,13 +546,13 @@ Optional columns starting with `bio_` or `blood_` are accepted and processed acc
 }
 ```
 
-#### 8.7.4 Error Behaviour
+#### 9.4 Error Behaviour
 - **Empty File**: Returns `HTTP 400` if the file contains only headers and no data rows.
 - **Invalid File Type**: Returns `HTTP 400` if the uploaded file is not a `.csv` or `.xlsx`.
 - **Missing Columns**: Returns `HTTP 400` if any mandatory clinical columns are missing.
 - **Unknown Patient ID**: If a `patient_id` value is provided but does not match any existing patient record, that row is marked as failed with the message `"Patient {id} not found. Register the patient before submitting a batch assessment."` The rest of the batch continues processing normally.
 
-## 9. Runtime Components Used by the Routes
+## 10. Runtime Components Used by the Routes
 
 Loaded on startup in `api/main.py`:
 
@@ -557,7 +570,7 @@ app.state.coimbra_feature_names
 
 These are treated as application-scoped runtime dependencies. Routes do not create them dynamically.
 
-## 10. Error Behaviour
+## 11. Error Behaviour
 
 ### 10.1 Authentication Errors
 
@@ -578,19 +591,198 @@ When a database write fails during an assessment, the API returns `HTTP 500` wit
 
 If required artefacts are missing from `ml/saved_models/`, application startup fails during the lifespan initialisation sequence. The backend does not silently retrain or continue with partial machine learning state.
 
-## 11. Implementation Notes That Affect Consumers
+## 12. Implementation Notes That Affect Consumers
 
 - route paths are `/member/assess` and `/clinician/assess`, not the older `/patient/assess` and `/doctor/assess`
 - all protected requests require valid Supabase JWTs
 - clinician blood panel payloads must not include `age`; the backend derives it from `clinical_data.age`
 - UCTH clinical data is always required because the ensemble always depends on that pathway
 
-## 12. Planned API Expansion
+## 13. Community Endpoints
 
-The current API surface only covers prediction. The repository structure and documentation anticipate future routes for:
+All community endpoints require any authenticated user (member or clinician). No role restriction is enforced. Clinician identity is exposed through the `role` field in the author profile, allowing the client to render a verification badge.
 
-- community features
+Shared response shapes used across community endpoints:
+
+### 13.1 `AuthorInfo`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | `UUID` | Product user identifier |
+| `display_name` | `string` | Formatted name for UI display |
+| `username` | `string` | Unique programmatic handle |
+| `avatar_url` | `string | null` | Supabase Storage URL for profile image |
+| `role` | `string` | Application role (`member` or `clinician`) |
+| `is_verified` | `boolean` | Clinician verification status |
+
+### 13.2 `ReactionCounts`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `like_count` | `integer` | Total likes on the post |
+| `reply_count` | `integer` | Total direct replies to the post |
+| `repost_count` | `integer` | Total reposts of the post |
+| `bookmark_count` | `integer` | Total bookmarks of the post |
+| `is_liked` | `boolean` | Whether the requesting user has liked the post |
+| `is_reposted` | `boolean` | Whether the requesting user has reposted the post |
+| `is_bookmarked` | `boolean` | Whether the requesting user has bookmarked the post |
+
+### 13.3 `PostResponse`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | `UUID` | Post identifier |
+| `content` | `string` | Post text content |
+| `image_url` | `string | null` | Optional attached image URL |
+| `view_count` | `integer` | Number of times the post has been viewed |
+| `created_at` | `datetime` | Post creation timestamp |
+| `author` | `AuthorInfo` | Author profile |
+| `reaction_counts` | `ReactionCounts` | Reaction totals and user flags |
+
+### 13.4 `FeedResponse`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `total` | `integer` | Total number of posts matching the query |
+| `results` | `array[PostResponse]` | Paginated post results |
+
+### `GET /api/community/feed`
+
+Required role: any authenticated user
+
+Purpose: returns a paginated list of top-level community posts ordered by creation time, newest first. Each post includes the author profile, reaction counts, and flags indicating whether the requesting user has liked, reposted, or bookmarked it.
+
+Query parameters:
+- `limit` (default 20, max 50): number of posts to return
+- `offset` (default 0): number of posts to skip for pagination
+
+Response shape: `FeedResponse`
+
+### `GET /api/community/feed/following`
+
+Required role: any authenticated user
+
+Purpose: returns a paginated list of posts from users the authenticated user follows, ordered by creation time, newest first. Uses the same response shape as the main feed.
+
+Query parameters:
+- `limit` (default 20, max 50): number of posts to return
+- `offset` (default 0): number of posts to skip for pagination
+
+Response shape: `FeedResponse`
+
+### `GET /api/community/search`
+
+Required role: any authenticated user
+
+Purpose: searches community content by keyword. Performs a case-insensitive substring match on post content for top-level posts, and on username and display name for users. Returns both result sets separately.
+
+Query parameters:
+- `q` (required, min length 1): search keyword
+- `limit` (default 20, max 50): maximum number of results per set
+
+Response fields: `posts` (array of `PostResponse`), `users` (array of user objects with `id`, `display_name`, `username`, `avatar_url`, `role`, `is_verified`)
+
+### `POST /api/community/posts`
+
+Required role: any authenticated user
+
+Purpose: creates a new top-level community post attributed to the authenticated user.
+
+Request body:
+- `content` (required, string): post text
+- `image_url` (optional, string): Supabase Storage public URL for attached image
+
+Response shape: `PostResponse` with initial zero reaction counts
+
+### `GET /api/community/posts/{id}`
+
+Required role: any authenticated user
+
+Purpose: returns a single post with all direct replies. Increments the post view count by one on each request. Replies are ordered by creation time, oldest first.
+
+Response fields: `id`, `content`, `image_url`, `view_count`, `created_at`, `author`, `reaction_counts`, `replies` (array of `PostResponse`)
+
+Error responses:
+- `404`: post not found or has been soft-deleted
+
+### `POST /api/community/posts/{id}/replies`
+
+Required role: any authenticated user
+
+Purpose: creates a reply to an existing post. The reply is attributed to the authenticated user and linked to the parent post.
+
+Request body:
+- `content` (required, string): reply text
+
+Response shape: `PostResponse` with initial zero reaction counts
+
+Error responses:
+- `404`: parent post not found or has been soft-deleted
+
+### `DELETE /api/community/posts/{id}`
+
+Required role: any authenticated user
+
+Purpose: soft-deletes a post by setting its `deleted_at` timestamp. Only the post author can delete it.
+
+Error responses:
+- `403`: the post does not belong to the authenticated user
+- `404`: post not found
+
+### `POST /api/community/posts/{id}/like`
+
+Required role: any authenticated user
+
+Purpose: toggles a like reaction on a post. If the user has already liked the post, the like is removed. Returns updated reaction counts.
+
+Response fields: `like_count`, `repost_count`, `bookmark_count`, `is_liked`, `is_reposted`, `is_bookmarked`
+
+### `POST /api/community/posts/{id}/repost`
+
+Required role: any authenticated user
+
+Purpose: toggles a repost reaction on a post. Returns updated reaction counts.
+
+Response fields: same as like toggle
+
+### `POST /api/community/posts/{id}/bookmark`
+
+Required role: any authenticated user
+
+Purpose: toggles a bookmark reaction on a post. Returns updated reaction counts.
+
+Response fields: same as like toggle
+
+### `GET /api/community/bookmarks`
+
+Required role: any authenticated user
+
+Purpose: returns a paginated list of posts the authenticated user has bookmarked, ordered by bookmark creation time, newest first.
+
+Query parameters:
+- `limit` (default 20, max 50): number of posts to return
+- `offset` (default 0): number of posts to skip for pagination
+
+Response shape: `FeedResponse`
+
+### `POST /api/community/users/{id}/follow`
+
+Required role: any authenticated user
+
+Purpose: creates a follow relationship. Succeeds silently if the relationship already exists.
+
+### `DELETE /api/community/users/{id}/follow`
+
+Required role: any authenticated user
+
+Purpose: removes a follow relationship. Succeeds silently if the relationship does not exist.
+
+## 14. Planned API Expansion
+
+The current API surface covers prediction and community features. The repository structure and documentation anticipate future routes for:
+
 - notifications
 - profile management
+- clinician verification workflows
 
 Those routes do not exist in the current codebase and should be documented separately once implemented.
