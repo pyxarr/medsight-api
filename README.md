@@ -137,6 +137,7 @@ export PYTHONIOENCODING=utf-8 && .venv/Scripts/python train.py
 
 ```bash
 uvicorn api.main:app --reload
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ## Current Endpoints 🔌
