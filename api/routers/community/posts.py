@@ -398,6 +398,7 @@ async def create_community_reply(
             author_user_id=current_user.id,
             post_id=post_id,
             content=content,
+            media_url=media_url,
         )
     except HTTPException:
         raise

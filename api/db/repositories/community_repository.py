@@ -42,6 +42,7 @@ class CommunityRepository:
         author_user_id: PythonUUID,
         post_id: PythonUUID,
         content: str,
+        media_url: str | None = None,
     ) -> CommunityPost:
         """Insert a reply to an existing post. Raise HTTP 404 if the parent is missing or deleted."""
         parent_query = select(CommunityPost).where(
@@ -57,6 +58,7 @@ class CommunityRepository:
         reply = CommunityPost(
             author_user_id=author_user_id,
             content=content,
+            media_url=media_url,
             parent_post_id=post_id,
         )
         database_session.add(reply)
