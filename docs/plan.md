@@ -13,6 +13,7 @@ Already implemented:
 - member and clinician assessment endpoints
 - Supabase JWT verification
 - role-based access control
+- optional patient_id on ClinicianManualAssessRequest — links to existing patient or creates new one
 - weighted multi-model inference
 - SHAP explainability for clinician output
 - out-of-distribution warnings for UCTH clinical features
@@ -22,7 +23,6 @@ Already implemented:
 
 Not yet implemented:
 
-- batch CSV upload endpoint
 - community endpoints
 - notifications
 - profile endpoints

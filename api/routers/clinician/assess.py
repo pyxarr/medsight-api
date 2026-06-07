@@ -255,11 +255,22 @@ async def clinician_manual_assess(
 ) -> dict[str, Any]:
     """Return a clinician assessment report from manual entry input."""
     patient_repository = PatientRepository()
-    patient_record = await patient_repository.create_patient(
-        database_session=database_session,
-        first_name=body.first_name,
-        last_name=body.last_name,
-    )
+    if body.patient_id:
+        patient_record = await patient_repository.get_by_external_id(
+            database_session=database_session,
+            patient_external_id=body.patient_id,
+        )
+        if patient_record is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Patient {body.patient_id} not found.",
+            )
+    else:
+        patient_record = await patient_repository.create_patient(
+            database_session=database_session,
+            first_name=body.first_name,
+            last_name=body.last_name,
+        )
     request_body = ClinicianPredictionRequest(
         patient_id=patient_record.patient_id,
         clinical_data=body.clinical_data,

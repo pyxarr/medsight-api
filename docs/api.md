@@ -91,7 +91,7 @@ require_role("clinician")
 | `GET` | `/` | No | None | Health check |
 | `GET` | `/api/users/me` | Yes | Any | Return/bootstrap product user profile |
 | `POST` | `/api/member/assess` | Yes | `member` | Simplified clinical assessment |
-| `POST` | `/api/clinician/manual-assess` | Yes | `clinician` | Manual diagnostic entry (Clinical + Blood) |
+| `POST` | `/api/clinician/manual-assess` | Yes | `clinician` | Manual diagnostic entry (Clinical + Blood). Optional patient_id links to existing patient. |
 | `POST` | `/api/clinician/batch-assess` | Yes | `clinician` | Batch CSV or XLSX upload for assessments |
 | `GET` | `/api/clinician/assessments` | Yes | `clinician` | Paginated assessment history list |
 | `GET` | `/api/clinician/assessments/{id}` | Yes | `clinician` | Full assessment detail record |
@@ -315,6 +315,46 @@ Response schema for user profile retrieval.
 | `last_name` | `string | null` | Family name |
 | `is_verified` | `boolean` | Identity verification status |
 | `created_at` | `datetime` | Record creation timestamp |
+
+### 6.7 `ClinicianManualAssessRequest`
+
+Request body for manual clinician assessment creation.
+
+```json
+{
+  "first_name": "Jane",
+  "last_name": "Doe",
+  "clinical_data": {
+    "age": 45,
+    "menopause": "premenopausal",
+    "tumor_size_cm": 3.0,
+    "invasive_nodes": 1,
+    "breast_side": "left",
+    "metastasis": "no",
+    "breast_quadrant": "upper outer",
+    "breast_disease_history": "no"
+  },
+  "blood_panel": {
+    "body_mass_index": 28.4,
+    "glucose": 92,
+    "insulin": 12.5,
+    "homeostasis_model_assessment": 2.8,
+    "leptin": 18.3,
+    "adiponectin": 9.2,
+    "resistin": 7.1,
+    "monocyte_chemoattractant_protein": 285.0
+  },
+  "patient_id": "P-2026-001"
+}
+```
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `first_name` | `string` | Yes | Patient given name |
+| `last_name` | `string` | Yes | Patient family name |
+| `clinical_data` | `ClinicalData` | Yes | Required clinical fields |
+| `blood_panel` | `BloodPanelData or null` | No | Optional blood biomarker data |
+| `patient_id` | `string or null` | No | Existing patient external ID. When provided the assessment is linked to that patient; when omitted a new patient profile is created. |
 
 ## 7. Member Assessment Endpoint
 

@@ -171,6 +171,7 @@ This structure ensures that as the API expands, files remain small and dependenc
 - `BloodPanelData`: 8 blood-panel fields, with age excluded and injected from `ClinicalData` at runtime
 - `MemberPredictionRequest`: wraps `patient_id` and `ClinicalData`
 - `ClinicianPredictionRequest`: wraps `patient_id`, `ClinicalData`, optional `BiopsyData`, and optional `BloodPanelData`
+- `ClinicianManualAssessRequest`: wraps `first_name`, `last_name`, `ClinicalData`, optional `BloodPanelData`, and optional `patient_id` — when `patient_id` is provided the assessment links to an existing patient; when omitted a new patient is created
 
 The schema split keeps validation separate from routing and prevents request model definitions from leaking into route modules.
 
@@ -348,7 +349,7 @@ Every protected API request:
 1. A clinician submits a form (Manual) or a CSV file (Batch) in the Expo application.
 2. The Expo client sends `POST /api/clinician/manual-assess` or `POST /api/clinician/batch-assess` with a JWT.
 3. FastAPI verifies the JWT and checks that `role == "clinician"`.
-4. For Manual entry: `PatientRepository` creates or retrieves the patient identity.
+4. For Manual entry: if `patient_id` is provided, `PatientRepository.get_by_external_id` looks up the existing patient (404 if not found); otherwise a new patient profile is created via `PatientRepository.create_patient`.
 5. For Batch entry: The CSV is uploaded to Supabase Storage, a `Batch` record is created, and the file is parsed row-by-row.
 6. For each assessment:
     - `ClinicalData` is converted into `ucth_dataframe`.
