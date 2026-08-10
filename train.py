@@ -13,6 +13,8 @@ from ml.inference.ood_detector import OutOfDistributionDetector
 
 SAVED_MODELS_DIRECTORY = Path("ml/saved_models")
 
+SAVED_MODELS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+
 def main():
     print("Starting ML pipeline training and artifact persistence...")
 
@@ -24,9 +26,15 @@ def main():
 
     # 2. Train all 3 models (this internally saves the 6 .pkl files)
     print("Training individual models...")
-    train_wisconsin_model()
-    train_ucth_model()
-    train_coimbra_model()
+    wisconsin_model, wisconsin_preprocessor, _ = train_wisconsin_model()
+    ucth_model, ucth_preprocessor, _ = train_ucth_model()
+    coimbra_model, coimbra_preprocessor, _ = train_coimbra_model()
+    joblib.dump(wisconsin_model,        SAVED_MODELS_DIRECTORY / "wisconsin_model.pkl")
+    joblib.dump(wisconsin_preprocessor, SAVED_MODELS_DIRECTORY / "wisconsin_preprocessor.pkl")
+    joblib.dump(ucth_model,             SAVED_MODELS_DIRECTORY / "ucth_model.pkl")
+    joblib.dump(ucth_preprocessor,      SAVED_MODELS_DIRECTORY / "ucth_preprocessor.pkl")
+    joblib.dump(coimbra_model,          SAVED_MODELS_DIRECTORY / "coimbra_model.pkl")
+    joblib.dump(coimbra_preprocessor,   SAVED_MODELS_DIRECTORY / "coimbra_preprocessor.pkl")
     print("  Individual models trained and saved.")
 
     # 3. Load the saved preprocessors back from disk
