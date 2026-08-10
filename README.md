@@ -25,13 +25,7 @@ Persistent application state is managed in Supabase. The codebase verifies Supab
 After the environment is configured:
 
 ```bash
-# Windows (Git Bash)
 .venv/Scripts/python train.py
-
-# Linux / WSL
-python train.py
-
-# Start the API (both platforms)
 uvicorn api.main:app --reload
 ```
 
@@ -114,11 +108,7 @@ uv sync
 2. Activate the virtual environment in Windows Git Bash.
 
 ```bash
-# Windows (Git Bash)
 source .venv/Scripts/activate
-
-# Linux / WSL
-source .venv/bin/activate
 ```
 
 3. Configure environment variables in a root `.env` file.
@@ -140,13 +130,8 @@ python train.py
 If your terminal has Windows encoding issues during training, run:
 
 ```bash
-# Windows encoding issues
 export PYTHONIOENCODING=utf-8 && .venv/Scripts/python train.py
-
-# Linux / WSL
-export PYTHONIOENCODING=utf-8 && python train.py
 ```
-The ml/saved_models/ directory is created automatically by train.py if it does not exist.
 
 5. Start the API.
 
