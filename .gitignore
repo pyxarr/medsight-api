@@ -14,3 +14,6 @@ wheels/
 
 # ML Models
 ml/saved_models/*.pkl
+
+# Generated plot outputs
+shap_plot.png
