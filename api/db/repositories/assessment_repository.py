@@ -217,3 +217,95 @@ async def list_patient_assessments(
     )
     assessments_result = await database_session.execute(assessments_query)
     return list(assessments_result.scalars().all())
+
+
+async def create_member_assessment(
+    database_session: AsyncSession,
+    member_user_id: PythonUUID,
+    patient_id: PythonUUID,
+    patient_external_id: str,
+    assessment_role: str,
+    clinical_data: dict,
+    risk_level: str,
+    key_risk_drivers: list[dict] | dict | None,
+    ood_warning: dict | None,
+) -> Assessment:
+    """Create and persist a member assessment record with plain-language fields."""
+    assessment_record = Assessment(
+        member_user_id=member_user_id,
+        patient_id=patient_id,
+        patient_external_id=patient_external_id,
+        assessment_role=assessment_role,
+        clinical_data=clinical_data,
+        risk_level=risk_level,
+        key_risk_drivers=key_risk_drivers,
+        ood_warning=ood_warning,
+    )
+
+    database_session.add(assessment_record)
+
+    try:
+        await database_session.flush()
+    except Exception:
+        await database_session.rollback()
+        raise
+
+    await database_session.refresh(assessment_record)
+
+    return assessment_record
+
+
+async def get_member_assessment(
+    database_session: AsyncSession,
+    member_user_id: PythonUUID,
+    assessment_id: PythonUUID,
+) -> Assessment | None:
+    """Return one active member assessment by identifier."""
+    assessment_query = select(Assessment).where(
+        Assessment.id == assessment_id,
+        Assessment.member_user_id == member_user_id,
+        Assessment.deleted_at.is_(None),
+    ).options(selectinload(Assessment.patient))
+    assessment_result = await database_session.execute(assessment_query)
+
+    return assessment_result.scalar_one_or_none()
+
+
+async def list_member_assessments(
+    database_session: AsyncSession,
+    member_user_id: PythonUUID,
+    status_filter: str | None,
+    page: int,
+    page_size: int,
+) -> tuple[int, list[Assessment]]:
+    """Return a paginated page of active member assessments."""
+    assessment_filters = [
+        Assessment.member_user_id == member_user_id,
+        Assessment.deleted_at.is_(None),
+    ]
+
+    if status_filter is not None:
+        if status_filter == "High risk":
+            assessment_filters.append(Assessment.risk_level == "High")
+        elif status_filter == "Success":
+            assessment_filters.append(
+                Assessment.risk_level.in_(["Low", "Medium"])
+            )
+
+    total_query = select(func.count()).select_from(Assessment)
+    assessments_query = (
+        select(Assessment)
+        .options(selectinload(Assessment.patient))
+        .where(*assessment_filters)
+        .order_by(Assessment.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    total_result = await database_session.execute(total_query.where(*assessment_filters))
+    assessments_result = await database_session.execute(assessments_query)
+
+    total_assessments = total_result.scalar_one()
+    assessment_records = list(assessments_result.scalars().all())
+
+    return total_assessments, assessment_records

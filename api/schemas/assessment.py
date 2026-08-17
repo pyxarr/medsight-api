@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional, Any
 from pydantic import ValidationInfo
 
@@ -15,6 +15,18 @@ class ClinicalData(BaseModel):
     metastasis:             int | str    # 0='no', 1='yes'
     breast_quadrant:        int | str    # 0='upper outer', 1='upper inner', 2='lower outer', 3='lower inner'
     breast_disease_history: int | str    # 0='no', 1='yes'
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalise_field_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Create a mutable shallow copy if needed
+            data = dict(data)
+            if "menopause_status" in data and "menopause" not in data:
+                data["menopause"] = data.pop("menopause_status")
+            if "tumour_size_cm" in data and "tumor_size_cm" not in data:
+                data["tumor_size_cm"] = data.pop("tumour_size_cm")
+        return data
 
     # Use mode="before" to intercept the input before Pydantic's type coercion attempt.
     # This allows us to handle strings and convert them to integers before the model is instantiated.

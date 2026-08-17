@@ -137,24 +137,25 @@ def main():
 
     # 1. Public & General Auth Routes
     results.append(run_test("Health Check", "GET", "...", "None", expected_status=200))
-
     results.append(run_test("User Profile (Member)", "GET", "users/me", m_token, expected_status=200))
     results.append(run_test("User Profile (Clinician)", "GET", "users/me", c_token, expected_status=200))
     results.append(run_test("User Profile (No Auth)", "GET", "users/me", "", expected_status=401))
 
     # 2. Member Assessment
     results.append(run_test(
-        "Member Assess (Valid)", 
-        "POST", "member/assess", m_token, 
-        {"patient_id": "MEM-API-001", "clinical_data": clinical_data}, 
+        "Member Manual Assess (Valid)", 
+        "POST", "member/manual-assess", m_token, 
+        {"first_name": "Test", "last_name": "Member", "clinical_data": clinical_data}, 
         expected_status=200
     ))
     results.append(run_test(
-        "Member Assess (Wrong Role - Clinician)", 
-        "POST", "member/assess", c_token, 
-        {"patient_id": "MEM-API-002", "clinical_data": clinical_data}, 
+        "Member Manual Assess (Wrong Role - Clinician)", 
+        "POST", "member/manual-assess", c_token, 
+        {"first_name": "Test", "last_name": "Member", "clinical_data": clinical_data}, 
         expected_status=403
     ))
+    results.append(run_test("Member History List", "GET", "member/assessments", m_token, expected_status=200))
+    results.append(run_test("Member History List (Wrong Role - Clinician)", "GET", "member/assessments", c_token, expected_status=403))
 
     # 3. Clinician Manual Assessment
     results.append(run_test(
