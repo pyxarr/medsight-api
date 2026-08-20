@@ -1,6 +1,7 @@
 import re
 from uuid import UUID as PythonUUID
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -106,6 +107,104 @@ class UserRepository:
             candidate_username = f"{base_username}{suffix}"
 
         return candidate_username
+
+    async def update_profile(
+        self,
+        database_session: AsyncSession,
+        current_user: CurrentUser,
+        institution: str | None = None,
+        specialisation: str | None = None,
+        experience_years: int | None = None,
+        location: str | None = None,
+    ) -> User:
+        """Update clinician profile fields (partial update)."""
+        user = await self.get_by_id(database_session=database_session, user_id=current_user.id)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
+
+        # Only update provided fields — partial update
+        if institution is not None:
+            user.institution = institution
+        if specialisation is not None:
+            user.specialisation = specialisation
+        if experience_years is not None:
+            if experience_years < 0 or experience_years > 50:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="experience_years must be between 0 and 50.",
+                )
+            user.experience_years = experience_years
+        if location is not None:
+            user.location = location
+
+        # Note: is_verified, medical_licence_number, licence_document_url
+        # are intentionally NOT updated here (verification flow keeps them as-is).
+
+        database_session.add(user)
+        try:
+            await database_session.flush()
+        except Exception:
+            await database_session.rollback()
+            raise
+
+        await database_session.refresh(user)
+        return user
+
+    async def submit_verification(
+        self,
+        database_session: AsyncSession,
+        user_id: PythonUUID,
+        medical_licence_number: str,
+        licence_document_url: str | None = None,
+    ) -> User:
+        """Record a clinician's licence credentials and persist the change."""
+        user_query = select(User).where(User.id == user_id)
+        user_result = await database_session.execute(user_query)
+        user_record = user_result.scalar_one_or_none()
+
+        if user_record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
+
+        user_record.medical_licence_number = medical_licence_number
+        # Leave an existing licence document link untouched when no new file is
+        # supplied so a resubmission cannot silently clear the stored reference.
+        if licence_document_url is not None:
+            user_record.licence_document_url = licence_document_url
+
+        database_session.add(user_record)
+        await database_session.commit()
+        await database_session.refresh(user_record)
+        return user_record
+
+    async def update_avatar(
+        self,
+        database_session: AsyncSession,
+        user_id: PythonUUID,
+        avatar_url: str,
+    ) -> User:
+        """Persist a new avatar URL for one user and return the updated record."""
+        user_query = select(User).where(User.id == user_id)
+        user_result = await database_session.execute(user_query)
+        user_record = user_result.scalar_one_or_none()
+
+        if user_record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
+
+        user_record.avatar_url = avatar_url
+
+        database_session.add(user_record)
+        await database_session.commit()
+        await database_session.refresh(user_record)
+        return user_record
 
     def _build_base_username(self, current_user: CurrentUser) -> str:
         """Build a stable username seed from auth claims."""

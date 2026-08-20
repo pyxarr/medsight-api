@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class UserProfileResponse(BaseModel):
@@ -24,3 +24,12 @@ class UserProfileResponse(BaseModel):
     is_verified: bool
     created_at: datetime
     updated_at: datetime
+
+
+class ClinicianProfileUpdate(BaseModel):
+    """Partial update schema for clinician profile polish."""
+
+    institution: str | None = Field(default=None, max_length=100)
+    specialisation: str | None = Field(default=None, max_length=50)
+    experience_years: int | None = Field(default=None, ge=0, le=50)
+    location: str | None = Field(default=None, max_length=100)

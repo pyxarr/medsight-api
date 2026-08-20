@@ -6,5 +6,6 @@
   "search.exclude": {
     "**/__pycache__": true,
     "**/*.pyc": true
-  }
+  },
+  "python-envs.pythonProjects": []
 }
