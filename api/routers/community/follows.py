@@ -1,4 +1,5 @@
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,11 +22,17 @@ async def follow_user(
     """Create a follow relationship between the authenticated user and the target user. If the relationship already exists, the request succeeds silently without error. The target user posts will then appear in the authenticated user following feed."""
     repository = CommunityRepository()
 
+    if str(current_user.id) == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot follow yourself.",
+        )
+
     try:
         await repository.follow_user(
             database_session=database_session,
             follower_id=current_user.id,
-            following_id=user_id,
+            following_id=UUID(user_id),
         )
     except Exception:
         LOGGER.exception(
@@ -55,7 +62,7 @@ async def unfollow_user(
         await repository.unfollow_user(
             database_session=database_session,
             follower_id=current_user.id,
-            following_id=user_id,
+            following_id=UUID(user_id),
         )
     except Exception:
         LOGGER.exception(

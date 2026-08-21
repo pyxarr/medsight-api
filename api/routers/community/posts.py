@@ -1,6 +1,18 @@
+# ruff: noqa: B008
 import logging
+from uuid import UUID as PythonUUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.repositories.community_repository import CommunityRepository
@@ -13,6 +25,7 @@ from api.lib.storage import (
     get_public_media_url,
     upload_community_media,
 )
+from api.models.user import User
 from api.schemas.community import (
     AuthorInfo,
     FeedResponse,
@@ -163,6 +176,45 @@ async def get_following_feed(
     )
 
 
+@router.get("/users/{user_id}/replies", response_model=FeedResponse)
+async def get_user_replies(
+    user_id: PythonUUID,
+    current_user: CurrentUser = Depends(get_current_user),
+    database_session: AsyncSession = Depends(get_db),
+    limit: int = Query(default=20, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+) -> FeedResponse:
+    """Return a paginated feed of replies written by one user, newest first, using the standard community feed shape."""
+    repository = CommunityRepository()
+
+    try:
+        total_posts, posts = await repository.get_user_replies(
+            database_session=database_session,
+            user_id=user_id,
+            requesting_user_id=current_user.id,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Failed to load user replies for user_id=%s requested_by=%s",
+            user_id,
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Replies could not be loaded. Please try again or contact "
+                "support if the problem persists."
+            ),
+        )
+
+    return FeedResponse(
+        total=total_posts,
+        results=[_serialise_post(post) for post in posts],
+    )
+
+
 @router.get("/search", response_model=SearchResponse)
 async def search_community(
     current_user: CurrentUser = Depends(get_current_user),
@@ -226,7 +278,7 @@ async def create_community_post(
                 storage_path=storage_path,
                 content_type=file.content_type or "application/octet-stream",
             )
-        except RuntimeError as exc:
+        except RuntimeError:
             LOGGER.exception(
                 "Failed to upload media for user_id=%s",
                 current_user.id,
@@ -281,7 +333,7 @@ async def create_community_post(
 
 @router.get("/posts/{post_id}", response_model=PostDetailResponse)
 async def get_community_post(
-    post_id: str,
+    post_id: PythonUUID,
     current_user: CurrentUser = Depends(get_current_user),
     database_session: AsyncSession = Depends(get_db),
 ) -> PostDetailResponse:
@@ -355,7 +407,7 @@ async def get_community_post(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_community_reply(
-    post_id: str,
+    post_id: PythonUUID,
     content: str = Form(...),
     file: UploadFile | None = File(None),
     current_user: CurrentUser = Depends(get_current_user),
@@ -380,7 +432,7 @@ async def create_community_reply(
                 storage_path=storage_path,
                 content_type=file.content_type or "application/octet-stream",
             )
-        except RuntimeError as exc:
+        except RuntimeError:
             LOGGER.exception(
                 "Failed to upload media for user_id=%s",
                 current_user.id,
@@ -439,7 +491,7 @@ async def create_community_reply(
 
 @router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_community_post(
-    post_id: str,
+    post_id: PythonUUID,
     current_user: CurrentUser = Depends(get_current_user),
     database_session: AsyncSession = Depends(get_db),
 ) -> None:
@@ -488,28 +540,10 @@ async def delete_community_post(
                 "support if the problem persists."
             ),
         )
-    except HTTPException:
-        raise
-    except Exception:
-        LOGGER.exception(
-            "Failed to delete post_id=%s for user_id=%s",
-            post_id,
-            current_user.id,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=(
-                "Post could not be deleted. Please try again or contact "
-                "support if the problem persists."
-            ),
-        )
 
 
-async def _get_author(database_session: AsyncSession, user_id: str):
+async def _get_author(database_session: AsyncSession, user_id: PythonUUID):
     """Fetch the author record for serialisation after post creation."""
-    from api.models.user import User
-    from sqlalchemy import select
-
     user_query = select(User).where(User.id == user_id)
     user_result = await database_session.execute(user_query)
     return user_result.scalar_one()

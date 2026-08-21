@@ -33,3 +33,24 @@ class ClinicianProfileUpdate(BaseModel):
     specialisation: str | None = Field(default=None, max_length=50)
     experience_years: int | None = Field(default=None, ge=0, le=50)
     location: str | None = Field(default=None, max_length=100)
+
+
+class PublicUserProfileResponse(BaseModel):
+    """Represent one public user profile for community surfaces."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    display_name: str
+    username: str
+    avatar_url: str | None
+    role: str
+    is_verified: bool
+    institution: str | None
+    specialisation: str | None
+    experience_years: int | None
+    location: str | None
+    email: str | None
+    followers_count: int
+    following_count: int
+    is_following: bool

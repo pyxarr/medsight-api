@@ -2,10 +2,11 @@ import re
 from uuid import UUID as PythonUUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.lib.auth import CurrentUser
+from api.models.community import Follow
 from api.models.user import User
 
 
@@ -205,6 +206,52 @@ class UserRepository:
         await database_session.commit()
         await database_session.refresh(user_record)
         return user_record
+
+    async def get_public_profile(
+        self,
+        database_session: AsyncSession,
+        user_id: PythonUUID,
+        requesting_user_id: PythonUUID,
+    ) -> tuple[User, int, int, bool]:
+        """Return one user profile with follower and following counts and follow status."""
+        user_query = select(User).where(User.id == user_id)
+        user_result = await database_session.execute(user_query)
+        user_record = user_result.scalar_one_or_none()
+
+        if user_record is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
+
+        followers_count_query = (
+            select(func.count())
+            .select_from(Follow)
+            .where(Follow.following_id == user_id)
+        )
+        followers_count_result = await database_session.execute(followers_count_query)
+        followers_count = followers_count_result.scalar_one()
+
+        following_count_query = (
+            select(func.count())
+            .select_from(Follow)
+            .where(Follow.follower_id == user_id)
+        )
+        following_count_result = await database_session.execute(following_count_query)
+        following_count = following_count_result.scalar_one()
+
+        is_following_query = (
+            select(func.count())
+            .select_from(Follow)
+            .where(
+                Follow.follower_id == requesting_user_id,
+                Follow.following_id == user_id,
+            )
+        )
+        is_following_result = await database_session.execute(is_following_query)
+        is_following = is_following_result.scalar_one() > 0
+
+        return user_record, followers_count, following_count, is_following
 
     def _build_base_username(self, current_user: CurrentUser) -> str:
         """Build a stable username seed from auth claims."""

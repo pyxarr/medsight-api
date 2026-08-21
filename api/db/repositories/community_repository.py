@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID as PythonUUID
 
 from fastapi import HTTPException
@@ -13,7 +13,7 @@ from api.models.user import User
 class CommunityRepository:
     """Handle persistence and retrieval for community posts, reactions, and follows."""
 
-    def _get_post_query(self, post_id: str):
+    def _get_post_query(self, post_id: PythonUUID):
         """Return a select query for one post by identifier."""
         return select(CommunityPost).where(CommunityPost.id == post_id)
 
@@ -142,6 +142,43 @@ class CommunityRepository:
             requesting_user_id=requesting_user_id,
         )
 
+    async def get_user_replies(
+        self,
+        database_session: AsyncSession,
+        user_id: PythonUUID,
+        requesting_user_id: PythonUUID,
+        limit: int,
+        offset: int,
+    ) -> tuple[int, list[dict]]:
+        """Return paginated replies written by one user with author details and reaction counts."""
+        replies_query = select(CommunityPost).where(
+            CommunityPost.author_user_id == user_id,
+            CommunityPost.parent_post_id.is_not(None),
+            CommunityPost.deleted_at.is_(None),
+        )
+
+        total_query = select(func.count()).select_from(CommunityPost).where(
+            CommunityPost.author_user_id == user_id,
+            CommunityPost.parent_post_id.is_not(None),
+            CommunityPost.deleted_at.is_(None),
+        )
+        total_result = await database_session.execute(total_query)
+        total_replies = total_result.scalar_one()
+
+        replies_result = await database_session.execute(
+            replies_query.order_by(CommunityPost.created_at.desc()).offset(offset).limit(limit)
+        )
+        replies = list(replies_result.scalars().all())
+
+        if not replies:
+            return total_replies, []
+
+        return total_replies, await self._enrich_posts(
+            database_session=database_session,
+            posts=replies,
+            requesting_user_id=requesting_user_id,
+        )
+
     async def get_post_with_replies(
         self,
         database_session: AsyncSession,
@@ -203,7 +240,7 @@ class CommunityRepository:
         if post.author_user_id != requesting_user_id:
             raise HTTPException(status_code=403, detail="Not authorised to delete this post")
 
-        post.deleted_at = datetime.now(timezone.utc)
+        post.deleted_at = datetime.now(UTC)
         await database_session.flush()
         await database_session.refresh(post)
         return post
@@ -530,7 +567,11 @@ class CommunityRepository:
             .group_by(CommunityPost.parent_post_id)
         )
         reply_count_result = await database_session.execute(reply_count_query)
-        reply_counts = dict(reply_count_result.all())
+        reply_counts = {
+            post_id: count
+            for post_id, count in reply_count_result.all()
+            if post_id is not None
+        }
 
         counts_map: dict[PythonUUID, dict] = {}
         for post_id in post_ids:

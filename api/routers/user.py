@@ -1,5 +1,6 @@
 import logging
 import os
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -8,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.db.repositories.user_repository import UserRepository
 from api.db.session import get_db
 from api.lib.auth import CurrentUser, get_current_user
-from api.schemas.user import UserProfileResponse, ClinicianProfileUpdate
+from api.schemas.user import UserProfileResponse, ClinicianProfileUpdate, PublicUserProfileResponse
 
 LOGGER = logging.getLogger(__name__)
 
@@ -255,3 +256,51 @@ async def update_current_user_avatar(
         )
 
     return UserProfileResponse.model_validate(updated_user)
+
+
+@router.get("/{user_id}", response_model=PublicUserProfileResponse)
+async def get_public_user_profile(
+    user_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    database_session: AsyncSession = Depends(get_db),
+) -> PublicUserProfileResponse:
+    """Return a public user profile with follower and following counts."""
+    user_repository = UserRepository()
+
+    try:
+        user, followers_count, following_count, is_following = await user_repository.get_public_profile(
+            database_session=database_session,
+            user_id=UUID(user_id),
+            requesting_user_id=current_user.id,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception(
+            "Failed to load public profile for user_id=%s",
+            user_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Public profile could not be loaded. Please try again or contact "
+                "support if the problem persists."
+            ),
+        )
+
+    return PublicUserProfileResponse(
+        id=user.id,
+        display_name=user.display_name,
+        username=user.username,
+        avatar_url=user.avatar_url,
+        role=user.role,
+        is_verified=user.is_verified,
+        institution=user.institution,
+        specialisation=user.specialisation,
+        experience_years=user.experience_years,
+        location=user.location,
+        email=user.email,
+        followers_count=followers_count,
+        following_count=following_count,
+        is_following=is_following,
+    )
