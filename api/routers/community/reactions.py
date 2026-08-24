@@ -1,11 +1,17 @@
+# ruff: noqa: B008
 import logging
+from typing import cast
+from uuid import UUID as PythonUUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.repositories.community_repository import CommunityRepository
+from api.db.repositories.notification_repository import NotificationRepository
 from api.db.session import get_db
 from api.lib.auth import CurrentUser, get_current_user
+from api.models.community import CommunityPost
 from api.schemas.community import (
     AuthorInfo,
     BookmarkResponse,
@@ -65,21 +71,48 @@ def _serialise_post(enriched_post_dict: dict) -> PostResponse:
     )
 
 
+async def _create_post_notification_if_needed(
+    database_session: AsyncSession,
+    post_id: PythonUUID,
+    actor_user_id: PythonUUID,
+    notification_type: str,
+) -> None:
+    """Create one post notification when the actor is not the post author."""
+    post_query = select(CommunityPost.author_user_id).where(CommunityPost.id == post_id)
+    post_result = await database_session.execute(post_query)
+    post_author_user_id = post_result.scalar_one_or_none()
+
+    if post_author_user_id is None or post_author_user_id == actor_user_id:
+        return
+
+    notification_repository = NotificationRepository()
+    await notification_repository.create_notification(
+        database_session=database_session,
+        user_id=post_author_user_id,
+        type=notification_type,
+        actor_user_id=actor_user_id,
+        post_id=post_id,
+    )
+
+
 async def _handle_toggle_reaction(
-    post_id: str,
+    post_id: PythonUUID,
     reaction_type: str,
     current_user: CurrentUser,
     database_session: AsyncSession,
-) -> ReactionToggleResponse:
+) -> dict[str, int | bool]:
     """Toggle a reaction and return the updated counts."""
     repository = CommunityRepository()
 
     try:
-        return await repository.toggle_reaction(
-            database_session=database_session,
-            post_id=post_id,
-            user_id=current_user.id,
-            reaction_type=reaction_type,
+        return cast(
+            dict[str, int | bool],
+            await repository.toggle_reaction(
+                database_session=database_session,
+                post_id=post_id,
+                user_id=current_user.id,
+                reaction_type=reaction_type,
+            ),
         )
     except Exception:
         LOGGER.exception(
@@ -99,52 +132,100 @@ async def _handle_toggle_reaction(
 
 @router.post("/posts/{post_id}/like", response_model=ReactionToggleResponse)
 async def toggle_like(
-    post_id: str,
+    post_id: PythonUUID,
     current_user: CurrentUser = Depends(get_current_user),
     database_session: AsyncSession = Depends(get_db),
 ) -> ReactionToggleResponse:
     """Toggle a like reaction on a post. If the authenticated user has already liked the post, the like is removed. If not, a like is added. Returns the updated reaction counts for the post."""
+    reaction_counts = await _handle_toggle_reaction(
+        post_id=post_id,
+        reaction_type="like",
+        current_user=current_user,
+        database_session=database_session,
+    )
+    if reaction_counts["is_liked"]:
+        try:
+            await _create_post_notification_if_needed(
+                database_session=database_session,
+                post_id=post_id,
+                actor_user_id=current_user.id,
+                notification_type="like",
+            )
+        except Exception:
+            LOGGER.exception(
+                "Failed to create like notification on post_id=%s for user_id=%s",
+                post_id,
+                current_user.id,
+            )
+
     return ReactionToggleResponse(
-        **await _handle_toggle_reaction(
-            post_id=post_id,
-            reaction_type="like",
-            current_user=current_user,
-            database_session=database_session,
-        )
+        like_count=int(reaction_counts["like_count"]),
+        repost_count=int(reaction_counts["repost_count"]),
+        bookmark_count=int(reaction_counts["bookmark_count"]),
+        is_liked=bool(reaction_counts["is_liked"]),
+        is_reposted=bool(reaction_counts["is_reposted"]),
+        is_bookmarked=bool(reaction_counts["is_bookmarked"]),
     )
 
 
 @router.post("/posts/{post_id}/repost", response_model=ReactionToggleResponse)
 async def toggle_repost(
-    post_id: str,
+    post_id: PythonUUID,
     current_user: CurrentUser = Depends(get_current_user),
     database_session: AsyncSession = Depends(get_db),
 ) -> ReactionToggleResponse:
     """Toggle a repost reaction on a post. If the authenticated user has already reposted the post, the repost is removed. If not, a repost is added. Returns the updated reaction counts for the post."""
+    reaction_counts = await _handle_toggle_reaction(
+        post_id=post_id,
+        reaction_type="repost",
+        current_user=current_user,
+        database_session=database_session,
+    )
+    if reaction_counts["is_reposted"]:
+        try:
+            await _create_post_notification_if_needed(
+                database_session=database_session,
+                post_id=post_id,
+                actor_user_id=current_user.id,
+                notification_type="repost",
+            )
+        except Exception:
+            LOGGER.exception(
+                "Failed to create repost notification on post_id=%s for user_id=%s",
+                post_id,
+                current_user.id,
+            )
+
     return ReactionToggleResponse(
-        **await _handle_toggle_reaction(
-            post_id=post_id,
-            reaction_type="repost",
-            current_user=current_user,
-            database_session=database_session,
-        )
+        like_count=int(reaction_counts["like_count"]),
+        repost_count=int(reaction_counts["repost_count"]),
+        bookmark_count=int(reaction_counts["bookmark_count"]),
+        is_liked=bool(reaction_counts["is_liked"]),
+        is_reposted=bool(reaction_counts["is_reposted"]),
+        is_bookmarked=bool(reaction_counts["is_bookmarked"]),
     )
 
 
 @router.post("/posts/{post_id}/bookmark", response_model=ReactionToggleResponse)
 async def toggle_bookmark(
-    post_id: str,
+    post_id: PythonUUID,
     current_user: CurrentUser = Depends(get_current_user),
     database_session: AsyncSession = Depends(get_db),
 ) -> ReactionToggleResponse:
     """Toggle a bookmark reaction on a post. If the authenticated user has already bookmarked the post, the bookmark is removed. If not, a bookmark is added. Returns the updated reaction counts for the post."""
+    reaction_counts = await _handle_toggle_reaction(
+        post_id=post_id,
+        reaction_type="bookmark",
+        current_user=current_user,
+        database_session=database_session,
+    )
     return ReactionToggleResponse(
-        **await _handle_toggle_reaction(
-            post_id=post_id,
-            reaction_type="bookmark",
-            current_user=current_user,
-            database_session=database_session,
-        )
+        like_count=int(reaction_counts["like_count"]),
+        repost_count=int(reaction_counts["repost_count"]),
+        bookmark_count=int(reaction_counts["bookmark_count"]),
+        is_liked=bool(reaction_counts["is_liked"]),
+        is_reposted=bool(reaction_counts["is_reposted"]),
+        is_bookmarked=bool(reaction_counts["is_bookmarked"]),
     )
 
 

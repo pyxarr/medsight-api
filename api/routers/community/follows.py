@@ -1,3 +1,4 @@
+# ruff: noqa: B008
 import logging
 from uuid import UUID
 
@@ -5,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.repositories.community_repository import CommunityRepository
+from api.db.repositories.notification_repository import NotificationRepository
 from api.db.session import get_db
 from api.lib.auth import CurrentUser, get_current_user
 
@@ -21,6 +23,8 @@ async def follow_user(
 ) -> None:
     """Create a follow relationship between the authenticated user and the target user. If the relationship already exists, the request succeeds silently without error. The target user posts will then appear in the authenticated user following feed."""
     repository = CommunityRepository()
+    notification_repository = NotificationRepository()
+    target_user_id = UUID(user_id)
 
     if str(current_user.id) == user_id:
         raise HTTPException(
@@ -32,7 +36,7 @@ async def follow_user(
         await repository.follow_user(
             database_session=database_session,
             follower_id=current_user.id,
-            following_id=UUID(user_id),
+            following_id=target_user_id,
         )
     except Exception:
         LOGGER.exception(
@@ -46,6 +50,21 @@ async def follow_user(
                 "Could not follow user. Please try again or contact "
                 "support if the problem persists."
             ),
+        )
+
+    try:
+        await notification_repository.create_notification(
+            database_session=database_session,
+            user_id=target_user_id,
+            type="follow",
+            actor_user_id=current_user.id,
+            post_id=None,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Failed to create follow notification for user_id=%s from actor_user_id=%s",
+            target_user_id,
+            current_user.id,
         )
 
 

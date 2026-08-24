@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.repositories.community_repository import CommunityRepository
+from api.db.repositories.notification_repository import NotificationRepository
 from api.db.session import get_db
 from api.lib.auth import CurrentUser, get_current_user
 from api.lib.storage import (
@@ -25,6 +26,7 @@ from api.lib.storage import (
     get_public_media_url,
     upload_community_media,
 )
+from api.models.community import CommunityPost
 from api.models.user import User
 from api.schemas.community import (
     AuthorInfo,
@@ -173,6 +175,29 @@ async def get_following_feed(
     return FeedResponse(
         total=total_posts,
         results=[_serialise_post(post) for post in posts],
+    )
+
+
+async def _create_reply_notification_if_needed(
+    database_session: AsyncSession,
+    post_id: PythonUUID,
+    actor_user_id: PythonUUID,
+) -> None:
+    """Create one reply notification when the actor replies to another user."""
+    parent_author_query = select(CommunityPost.author_user_id).where(CommunityPost.id == post_id)
+    parent_author_result = await database_session.execute(parent_author_query)
+    parent_author_user_id = parent_author_result.scalar_one_or_none()
+
+    if parent_author_user_id is None or parent_author_user_id == actor_user_id:
+        return
+
+    notification_repository = NotificationRepository()
+    await notification_repository.create_notification(
+        database_session=database_session,
+        user_id=parent_author_user_id,
+        type="reply",
+        actor_user_id=actor_user_id,
+        post_id=post_id,
     )
 
 
@@ -466,6 +491,19 @@ async def create_community_reply(
                 "Reply could not be created. Please try again or contact "
                 "support if the problem persists."
             ),
+        )
+
+    try:
+        await _create_reply_notification_if_needed(
+            database_session=database_session,
+            post_id=post_id,
+            actor_user_id=current_user.id,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Failed to create reply notification for post_id=%s from user_id=%s",
+            post_id,
+            current_user.id,
         )
 
     return ReplyResponse(

@@ -8,13 +8,7 @@ from api.routers.clinician import clinician_router
 from api.routers.user import router as user_router
 from api.routers.community import community_router
 from api.routers.community.chat import router as chat_router
-# Register ORM model metadata before startup so SQLAlchemy is aware of all tables.
-import api.models.user
-import api.models.assessment
-import api.models.batch
-import api.models.notification
-import api.models.patient
-import api.db.models.conversation  # noqa: F401
+from api.routers.community.notifications import router as notifications_router
 from contextlib import asynccontextmanager
 from pathlib import Path
 import joblib
@@ -74,6 +68,7 @@ app.include_router(clinician_router, prefix="/api/clinician", tags=["Clinician"]
 app.include_router(user_router, prefix="/api/users", tags=["Users"])
 app.include_router(community_router, prefix="/api/community", tags=["Community"])
 app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
+app.include_router(notifications_router, prefix="/api", tags=["notifications"])
 
 
 @app.get("/")

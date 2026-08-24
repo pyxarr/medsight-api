@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models.conversation import Conversation, DirectMessage
 from api.db.repositories.conversation_repository import ConversationRepository
+from api.db.repositories.notification_repository import NotificationRepository
 from api.db.session import get_db
 from api.lib.auth import CurrentUser, get_current_user
 from api.models.user import User
@@ -254,8 +255,14 @@ async def send_direct_message(
 ) -> MessageResponse:
     """Send one direct message in an existing conversation."""
     repository = ConversationRepository()
+    notification_repository = NotificationRepository()
 
     try:
+        conversation = await repository.get_conversation_by_id(
+            database_session=database_session,
+            conversation_id=conversation_id,
+            requesting_user_id=current_user.id,
+        )
         message = await repository.send_message(
             database_session=database_session,
             conversation_id=conversation_id,
@@ -264,6 +271,16 @@ async def send_direct_message(
             media_url=request.media_url,
             media_type=request.media_type,
         )
+        other_participant_id = _get_other_participant_id(conversation, current_user.id)
+        if other_participant_id != current_user.id:
+            await notification_repository.create_notification(
+                database_session=database_session,
+                user_id=other_participant_id,
+                type="message",
+                actor_user_id=current_user.id,
+                post_id=None,
+                conversation_id=conversation_id,
+            )
     except HTTPException:
         raise
     except Exception:
@@ -279,6 +296,24 @@ async def send_direct_message(
                 "if the problem persists."
             ),
         )
+
+    other_participant_id = _get_other_participant_id(conversation, current_user.id)
+    if other_participant_id != current_user.id:
+        try:
+            await notification_repository.create_notification(
+                database_session=database_session,
+                user_id=other_participant_id,
+                type="message",
+                actor_user_id=current_user.id,
+                post_id=None,
+                conversation_id=conversation_id,
+            )
+        except Exception:
+            LOGGER.exception(
+                "Failed to create message notification in conversation_id=%s from user_id=%s",
+                conversation_id,
+                current_user.id,
+            )
 
     return _serialise_message(message)
 
