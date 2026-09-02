@@ -129,7 +129,17 @@ async def parse_batch_xlsx(file: UploadFile) -> tuple[pd.DataFrame, bytes]:
         raise ValueError("The uploaded XLSX file is empty.")
 
     try:
-        batch_dataframe = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+        batch_dataframe = pd.read_excel(
+            io.BytesIO(file_bytes),
+            engine="openpyxl",
+            # Row 0 is the title, row 1 is the section headers, row 2 is the real
+            # column headers (patient_name, cli_age, etc.) — skip to it.
+            header=2,
+        )
+        # Row immediately after the headers is the format-hint row
+        # ("Full name", "e.g. 45", etc.) — drop it before processing.
+        if len(batch_dataframe) > 0 and str(batch_dataframe.iloc[0].get("patient_name", "")).strip().lower() in ("full name", "full_name"):
+            batch_dataframe = batch_dataframe.iloc[1:].reset_index(drop=True)
     except Exception as exc:
         raise ValueError(
             "Could not read the uploaded Excel file. Ensure the file is a valid, unprotected .xlsx workbook."
