@@ -133,13 +133,23 @@ async def parse_batch_xlsx(file: UploadFile) -> tuple[pd.DataFrame, bytes]:
             io.BytesIO(file_bytes),
             engine="openpyxl",
             # Row 0 is the title, row 1 is the section headers, row 2 is the real
-            # column headers (patient_name, cli_age, etc.) — skip to it.
+            # column headers — skip to it.
             header=2,
         )
-        # Row immediately after the headers is the format-hint row
-        # ("Full name", "e.g. 45", etc.) — drop it before processing.
+
+        # The template column headers contain decorative suffixes such as " ★" and
+        # embedded newlines (e.g. "patient_id\n(optional)"). Strip these so the
+        # column names match the expected backend field names exactly.
+        batch_dataframe.columns = [
+            col.split("\n")[0].replace("★", "").strip()
+            for col in batch_dataframe.columns.astype(str)
+        ]
+
+        # Drop the format-hint row that sits immediately below the headers in the
+        # template ("Full name", "e.g. 45", etc.) — it is never patient data.
         if len(batch_dataframe) > 0 and str(batch_dataframe.iloc[0].get("patient_name", "")).strip().lower() in ("full name", "full_name"):
             batch_dataframe = batch_dataframe.iloc[1:].reset_index(drop=True)
+
     except Exception as exc:
         raise ValueError(
             "Could not read the uploaded Excel file. Ensure the file is a valid, unprotected .xlsx workbook."
