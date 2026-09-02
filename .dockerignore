@@ -7,4 +7,3 @@ __pycache__/
 .gitignore
 ml/saved_models/*.pkl
 tests/
-*.md

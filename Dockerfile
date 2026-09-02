@@ -1,21 +1,15 @@
 FROM python:3.11-slim
 
-# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Copy lockfile and pyproject first for layer caching —
-# dependencies only reinstall when these files change
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 
-# Sync dependencies into the project virtualenv
 RUN uv sync --frozen --no-dev
 
-# Copy the rest of the source
 COPY . .
 
-# Train all ML artefacts and bake them into the image
 RUN PYTHONIOENCODING=utf-8 uv run python train.py
 
 EXPOSE 8000
