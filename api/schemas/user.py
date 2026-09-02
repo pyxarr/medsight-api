@@ -35,6 +35,17 @@ class ClinicianProfileUpdate(BaseModel):
     location: str | None = Field(default=None, max_length=100)
 
 
+class ProfileUpdate(BaseModel):
+    """Unified profile update schema for members and clinicians."""
+
+    display_name: str | None = Field(default=None, min_length=1, max_length=100)
+    username: str | None = Field(default=None, min_length=3, max_length=50, pattern=r"^[a-z0-9_]+$")
+    institution: str | None = Field(default=None, max_length=100)
+    specialisation: str | None = Field(default=None, max_length=50)
+    experience_years: int | None = Field(default=None, ge=0, le=50)
+    location: str | None = Field(default=None, max_length=100)
+
+
 class PublicUserProfileResponse(BaseModel):
     """Represent one public user profile for community surfaces."""
 

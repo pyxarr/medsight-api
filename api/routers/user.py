@@ -1,15 +1,29 @@
+# ruff: noqa: B008, ASYNC210
 import logging
 import os
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.repositories.user_repository import UserRepository
 from api.db.session import get_db
 from api.lib.auth import CurrentUser, get_current_user
-from api.schemas.user import UserProfileResponse, ClinicianProfileUpdate, PublicUserProfileResponse
+from api.schemas.user import (
+    ProfileUpdate,
+    PublicUserProfileResponse,
+    UserProfileResponse,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -55,43 +69,77 @@ async def get_current_user_profile(
 
 @router.patch("/me", response_model=UserProfileResponse)
 async def patch_current_user_profile(
-    request: ClinicianProfileUpdate,
+    request: ProfileUpdate,
     current_user: CurrentUser = Depends(get_current_user),
     database_session: AsyncSession = Depends(get_db),
 ) -> UserProfileResponse:
-    """Update clinician profile fields (partial update)."""
+    """Update profile fields (partial update) for members and clinicians."""
     user_repository = UserRepository()
+
+    # Filter clinician-only fields for members
+    institution = request.institution if current_user.role == "clinician" else None
+    specialisation = request.specialisation if current_user.role == "clinician" else None
+    experience_years = request.experience_years if current_user.role == "clinician" else None
 
     try:
         updated_user = await user_repository.update_profile(
             database_session=database_session,
-            current_user=current_user,
-            institution=request.institution,
-            specialisation=request.specialisation,
-            experience_years=request.experience_years,
+            user_id=current_user.id,
+            display_name=request.display_name,
+            username=request.username,
+            institution=institution,
+            specialisation=specialisation,
+            experience_years=experience_years,
             location=request.location,
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         LOGGER.exception(
-            "Failed to update user profile for user_id=%s. Error: %s",
+            "Failed to update user profile for user_id=%s",
             current_user.id,
-            str(e),
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="User profile could not be updated. Please try again or contact support "
-            "if the problem persists.",
-        )
-
-    if updated_user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found.",
+            detail=(
+                "User profile could not be updated. Please try again or contact support "
+                "if the problem persists."
+            ),
         )
 
     return UserProfileResponse.model_validate(updated_user)
+
+
+@router.get("/check-username")
+async def check_username_availability(
+    username: str = Query(..., min_length=3, max_length=50, pattern=r"^[a-z0-9_]+$"),
+    current_user: CurrentUser = Depends(get_current_user),
+    database_session: AsyncSession = Depends(get_db),
+) -> dict[str, bool]:
+    """Check if a username is available for the current user."""
+    user_repository = UserRepository()
+
+    try:
+        available = await user_repository.check_username_available(
+            database_session=database_session,
+            username=username.lower(),
+            exclude_user_id=current_user.id,
+        )
+    except Exception:
+        LOGGER.exception(
+            "Failed to check username availability for username=%s user_id=%s",
+            username,
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Username availability could not be checked. Please try again or contact "
+                "support if the problem persists."
+            ),
+        )
+
+    return {"available": available}
 
 
 @router.patch("/me/verification", response_model=UserProfileResponse)

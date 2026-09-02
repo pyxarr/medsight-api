@@ -3,6 +3,7 @@ from uuid import UUID as PythonUUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.lib.auth import CurrentUser
@@ -112,21 +113,45 @@ class UserRepository:
     async def update_profile(
         self,
         database_session: AsyncSession,
-        current_user: CurrentUser,
+        user_id: PythonUUID,
+        display_name: str | None = None,
+        username: str | None = None,
         institution: str | None = None,
         specialisation: str | None = None,
         experience_years: int | None = None,
         location: str | None = None,
     ) -> User:
-        """Update clinician profile fields (partial update)."""
-        user = await self.get_by_id(database_session=database_session, user_id=current_user.id)
+        """Update profile fields (partial update). Handles display_name, username for all roles, and clinician fields for clinicians."""
+        user = await self.get_by_id(database_session=database_session, user_id=user_id)
         if user is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found.",
             )
 
-        # Only update provided fields — partial update
+        # Handle username update with uniqueness check
+        if username is not None and username != user.username:
+            existing = await self.get_by_username(
+                database_session=database_session,
+                username=username,
+            )
+            if existing is not None and existing.id != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Username already taken.",
+                )
+            user.username = username
+
+        # Handle display_name update
+        if display_name is not None:
+            if not display_name.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="display_name cannot be empty.",
+                )
+            user.display_name = display_name.strip()
+
+        # Only update provided clinician fields — partial update
         if institution is not None:
             user.institution = institution
         if specialisation is not None:
@@ -147,12 +172,38 @@ class UserRepository:
         database_session.add(user)
         try:
             await database_session.flush()
-        except Exception:
+        except IntegrityError:
             await database_session.rollback()
+            # Re-check username uniqueness in case of race condition
+            if username is not None:
+                existing = await self.get_by_username(
+                    database_session=database_session,
+                    username=username,
+                )
+                if existing is not None and existing.id != user_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Username already taken.",
+                    )
             raise
 
         await database_session.refresh(user)
         return user
+
+    async def check_username_available(
+        self,
+        database_session: AsyncSession,
+        username: str,
+        exclude_user_id: PythonUUID,
+    ) -> bool:
+        """Return True if username is available for the given user (excluding their current username)."""
+        existing = await self.get_by_username(
+            database_session=database_session,
+            username=username,
+        )
+        if existing is None:
+            return True
+        return existing.id == exclude_user_id
 
     async def submit_verification(
         self,
