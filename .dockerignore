@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+ml/saved_models/*.pkl
+tests/
+*.md
